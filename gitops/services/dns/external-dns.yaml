@@ -1,0 +1,68 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: external-dns
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://kubernetes-sigs.github.io/external-dns/
+    chart: external-dns
+    targetRevision: 1.13.1
+    helm:
+      values: |
+        image:
+          repository: registry.k8s.io/external-dns/external-dns
+          tag: v0.14.0
+        
+        sources:
+          - ingress
+          - service
+        
+        provider: cloudflare
+        
+        env:
+          - name: CF_API_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: cloudflare-api-token
+                key: api-token
+        
+        domainFilters:
+          - ryone.dev
+        
+        policy: sync
+        
+        registry: txt
+        txtOwnerId: heracles-external-dns
+        txtPrefix: heracles-
+        
+        interval: 1m
+        
+        resources:
+          limits:
+            cpu: 50m
+            memory: 50Mi
+          requests:
+            cpu: 10m
+            memory: 20Mi
+        
+        metrics:
+          enabled: true
+          serviceMonitor:
+            enabled: true
+            namespace: observability
+        
+        logLevel: info
+        logFormat: text
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: external-dns
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

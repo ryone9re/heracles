@@ -1,0 +1,113 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rollout-config
+  namespace: argo-rollouts
+data:
+  config.yaml: |
+    apiVersion: v1
+    kind: ConfigMap
+    metadata:
+      name: argo-rollouts-config
+      namespace: argo-rollouts
+    data:
+      defaults: |
+        scaleDownDelaySeconds: 30
+        scaleUpDelaySeconds: 30
+        autoPromotionEnabled: false
+      
+      trafficRouterPlugins: |
+        - name: nginx
+          location: file:///tmp/argo-rollout-extension/nginx.so
+        - name: istio
+          location: file:///tmp/argo-rollout-extension/istio.so
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: rollout-template
+  namespace: default
+spec:
+  replicas: 3
+  strategy:
+    canary:
+      maxSurge: "25%"
+      maxUnavailable: 0
+      analysis:
+        templates:
+          - templateName: success-rate
+        startingStep: 2
+        args:
+          - name: service-name
+            value: rollout-template
+      
+      steps:
+        - setWeight: 20
+        - pause:
+            duration: 10s
+        
+        - setWeight: 40
+        - pause:
+            duration: 10s
+        
+        - setWeight: 60
+        - pause:
+            duration: 10s
+        
+        - setWeight: 80
+        - pause:
+            duration: 10s
+        
+        - setWeight: 100
+        - pause:
+            duration: 10s
+      
+      trafficRouting:
+        nginx:
+          stableIngress: rollout-template-stable
+          additionalIngressAnnotations:
+            canary-by-header: X-Canary
+            canary-by-header-value: "true"
+  
+  selector:
+    matchLabels:
+      app: rollout-template
+  
+  template:
+    metadata:
+      labels:
+        app: rollout-template
+    spec:
+      containers:
+        - name: rollout-template
+          image: nginx:latest
+          ports:
+            - name: http
+              containerPort: 80
+              protocol: TCP
+          
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+          
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3

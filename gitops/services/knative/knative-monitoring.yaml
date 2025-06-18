@@ -1,0 +1,106 @@
+apiVersion: v1
+kind: ServiceMonitor
+metadata:
+  name: knative-serving-metrics
+  namespace: observability
+  labels:
+    app: knative-serving
+spec:
+  selector:
+    matchLabels:
+      app: controller
+  namespaceSelector:
+    matchNames:
+      - knative-serving
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics
+---
+apiVersion: v1
+kind: ServiceMonitor
+metadata:
+  name: knative-eventing-metrics
+  namespace: observability
+  labels:
+    app: knative-eventing
+spec:
+  selector:
+    matchLabels:
+      app: eventing-controller
+  namespaceSelector:
+    matchNames:
+      - knative-eventing
+  endpoints:
+    - port: metrics
+      interval: 30s
+      path: /metrics
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: knative-grafana-dashboard
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+data:
+  knative-dashboard.json: |
+    {
+      "dashboard": {
+        "id": null,
+        "title": "Knative Serving & Eventing",
+        "tags": ["knative", "serverless"],
+        "style": "dark",
+        "timezone": "browser",
+        "panels": [
+          {
+            "id": 1,
+            "title": "Active Services",
+            "type": "stat",
+            "targets": [
+              {
+                "expr": "count(kservice_ready_state{condition=\"True\"})",
+                "refId": "A"
+              }
+            ],
+            "fieldConfig": {
+              "defaults": {
+                "unit": "short"
+              }
+            },
+            "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0}
+          },
+          {
+            "id": 2,
+            "title": "Request Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "sum(rate(request_count[5m])) by (service_name)",
+                "refId": "A",
+                "legendFormat": "{{service_name}}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 18, "x": 6, "y": 0}
+          },
+          {
+            "id": 3,
+            "title": "Cold Start Latency",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.95, sum(rate(request_latencies_bucket{response_code_class!=\"5xx\"}[5m])) by (le, service_name))",
+                "refId": "A",
+                "legendFormat": "95th percentile - {{service_name}}"
+              }
+            ],
+            "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8}
+          }
+        ],
+        "time": {
+          "from": "now-1h",
+          "to": "now"
+        },
+        "refresh": "30s"
+      }
+    }

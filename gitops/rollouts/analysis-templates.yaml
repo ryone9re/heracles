@@ -1,0 +1,121 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: success-rate
+  namespace: argo-rollouts
+spec:
+  args:
+    - name: service-name
+    - name: canary-hash
+  
+  metrics:
+    - name: success-rate
+      successCondition: result[0] >= 0.95
+      failureLimit: 3
+      interval: 30s
+      count: 5
+      provider:
+        prometheus:
+          address: http://prometheus-prometheus.observability.svc.cluster.local:9090
+          query: |
+            sum(irate(
+              http_requests_total{job="{{args.service-name}}-canary"}[2m]
+            )) by (job) /
+            sum(irate(
+              http_requests_total{job="{{args.service-name}}-canary"}[2m]
+            )) by (job)
+    
+    - name: avg-response-time
+      successCondition: result[0] <= 0.5
+      failureLimit: 3
+      interval: 30s
+      count: 5
+      provider:
+        prometheus:
+          address: http://prometheus-prometheus.observability.svc.cluster.local:9090
+          query: |
+            histogram_quantile(0.95,
+              sum(irate(
+                http_request_duration_seconds_bucket{job="{{args.service-name}}-canary"}[2m]
+              )) by (le, job)
+            )
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: error-rate
+  namespace: argo-rollouts
+spec:
+  args:
+    - name: service-name
+  
+  metrics:
+    - name: error-rate
+      successCondition: result[0] <= 0.05
+      failureLimit: 3
+      interval: 30s
+      count: 5
+      provider:
+        prometheus:
+          address: http://prometheus-prometheus.observability.svc.cluster.local:9090
+          query: |
+            sum(irate(
+              http_requests_total{job="{{args.service-name}}-canary",status=~"5.."}[2m]
+            )) by (job) /
+            sum(irate(
+              http_requests_total{job="{{args.service-name}}-canary"}[2m]
+            )) by (job)
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: cpu-usage
+  namespace: argo-rollouts
+spec:
+  args:
+    - name: service-name
+  
+  metrics:
+    - name: cpu-usage
+      successCondition: result[0] <= 0.8
+      failureLimit: 3
+      interval: 30s
+      count: 5
+      provider:
+        prometheus:
+          address: http://prometheus-prometheus.observability.svc.cluster.local:9090
+          query: |
+            avg(rate(
+              container_cpu_usage_seconds_total{
+                pod=~"{{args.service-name}}-canary-.*",
+                container!="POD",
+                container!=""
+              }[2m]
+            )) by (pod)
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: memory-usage
+  namespace: argo-rollouts
+spec:
+  args:
+    - name: service-name
+  
+  metrics:
+    - name: memory-usage
+      successCondition: result[0] <= 800000000  # 800MB
+      failureLimit: 3
+      interval: 30s
+      count: 5
+      provider:
+        prometheus:
+          address: http://prometheus-prometheus.observability.svc.cluster.local:9090
+          query: |
+            avg(
+              container_memory_working_set_bytes{
+                pod=~"{{args.service-name}}-canary-.*",
+                container!="POD",
+                container!=""
+              }
+            ) by (pod)
