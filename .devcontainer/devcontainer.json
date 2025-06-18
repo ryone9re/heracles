@@ -1,0 +1,14 @@
+{
+	"name": "Node.js",
+	"image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"hashicorp.terraform",
+				"Infracost.infracost",
+				"pjmiravalle.terraform-advanced-syntax-highlighting"
+			]
+		}
+	},
+	"postCreateCommand": "./setup.sh"
+}
