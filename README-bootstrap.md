@@ -5,11 +5,13 @@
 ## 🎯 構成概要
 
 **インフラ構成:**
+
 - **OKEクラスター**: コントロールプレーン（無料）+ ワーカー4台
 - **ワーカーノード**: VM.Standard.A1.Flex（各1 OCPU, 6GB RAM）
 - **総リソース**: 4 OCPU, 24GB RAM（無料枠フル活用）
 
 **アーキテクチャ:**
+
 - **GitOps**: ArgoCD によるアプリケーション管理
 - **シークレット管理**: HashiCorp Vault + External Secrets Operator
 - **監視**: Prometheus + Grafana + Loki + Tempo
@@ -76,7 +78,8 @@ kubectl port-forward -n harbor svc/harbor-core 8080:80
 **実行時間**: 約20-30分
 
 **出力例**:
-```
+
+```plaintext
 🌐 OKEクラスター: heracles-oke-cluster
 🎯 リソース合計: 4 OCPU, 24GB RAM（無料枠フル活用）
 🔐 ArgoCD Admin: admin / AbCdEf123456
@@ -99,6 +102,7 @@ kubectl port-forward -n harbor svc/harbor-core 8080:80
 **実行時間**: 約15-20分
 
 **段階実行も可能**:
+
 ```bash
 ./deploy-apps.sh --sync-only    # ArgoCD同期のみ
 ./deploy-apps.sh --verify-only  # 検証のみ
@@ -199,22 +203,26 @@ kubectl exec vault-0 -n vault -- vault write auth/github/config organization=<yo
 ### よくある問題
 
 1. **OCI認証エラー**
+
    ```bash
    oci setup config  # OCI CLI再設定
    ```
 
 2. **リソース不足**
+
    ```bash
    kubectl top nodes  # リソース使用量確認
    ```
 
 3. **Pod起動失敗**
+
    ```bash
    kubectl describe pod <pod-name> -n <namespace>
    kubectl logs <pod-name> -n <namespace>
    ```
 
 4. **ArgoCD同期失敗**
+
    ```bash
    kubectl describe application <app-name> -n argocd
    ```
@@ -259,6 +267,7 @@ Grafanaで以下のアラートを設定することを推奨:
 ### パフォーマンス
 
 1. **リソースリクエスト調整**
+
    ```yaml
    resources:
      requests:
@@ -270,6 +279,7 @@ Grafanaで以下のアラートを設定することを推奨:
    ```
 
 2. **ノードアフィニティ活用**
+
    ```yaml
    nodeAffinity:
      requiredDuringSchedulingIgnoredDuringExecution:
@@ -288,6 +298,7 @@ Grafanaで以下のアラートを設定することを推奨:
    - Load Balancer: 1個
 
 2. **リソース制限設定**
+
    ```bash
    # 名前空間別リソース制限
    kubectl apply -f gitops/base/resource-quotas.yaml
