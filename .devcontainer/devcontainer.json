@@ -11,6 +11,7 @@
 	},
 	"postCreateCommand": "./setup.sh",
 	"features": {
+		"./features/claude-code": {},
 		"ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {
 			"version": "latest",
 			"helm": "latest",
@@ -19,6 +20,10 @@
 		"ghcr.io/devcontainers/features/docker-in-docker:2": {
 			"version": "latest",
 			"dockerDashComposeVersion": "v2"
+		},
+		"./features/oci": {},
+		"ghcr.io/devcontainers-extra/features/terraform-asdf:2": {
+			"version": "latest"
 		}
 	}
 }

@@ -39,7 +39,7 @@ export GITHUB_TOKEN="ghp_your-github-token"  # オプション
 
 ```bash
 # OKE環境構築（20-30分）
-./bootstrap-oke.sh
+./deploy-oke.sh
 
 # アプリケーション展開（15-20分）
 ./deploy-apps.sh
@@ -63,7 +63,7 @@ kubectl port-forward -n harbor svc/harbor-core 8080:80
 ### ステップ1: OKE基盤構築
 
 ```bash
-# bootstrap-oke.sh の実行内容:
+# deploy-oke.sh の実行内容:
 # 1. VCN・サブネット作成
 # 2. OKEクラスター作成（コントロールプレーン）
 # 3. ワーカーノードプール作成（4台）
@@ -72,7 +72,7 @@ kubectl port-forward -n harbor svc/harbor-core 8080:80
 # 6. ArgoCD初期設定
 # 7. Vault初期化・設定
 
-./bootstrap-oke.sh --help  # ヘルプ表示
+./deploy-oke.sh --help  # ヘルプ表示
 ```
 
 **実行時間**: 約20-30分
@@ -231,7 +231,7 @@ kubectl exec vault-0 -n vault -- vault write auth/github/config organization=<yo
 
 ```bash
 # 環境完全削除
-./bootstrap-oke.sh cleanup
+./deploy-oke.sh cleanup
 
 # 完全再構築
 ./disaster-recovery.sh rebuild
@@ -318,8 +318,3 @@ Grafanaで以下のアラートを設定することを推奨:
 
 1. このドキュメントのトラブルシューティングセクションを確認
 2. ログ出力をチェック
-3. GitHub Issues で報告
-
----
-
-**🎯 目標**: 無料枠内で本格的なクラウドネイティブ環境の構築完了！

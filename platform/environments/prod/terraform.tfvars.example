@@ -1,0 +1,23 @@
+# OCI Configuration
+# Copy this file to terraform.tfvars and fill in your values
+
+# Required OCI credentials
+tenancy_ocid     = "ocid1.tenancy.oc1..aaaaaaaa..."
+compartment_ocid = "ocid1.compartment.oc1..aaaaaaaa..."
+user_ocid        = "ocid1.user.oc1..aaaaaaaa..."
+fingerprint      = "aa:bb:cc:dd:ee:ff:gg:hh:ii:jj:kk:ll:mm:nn:oo:pp"
+private_key_path = "~/.oci/oci_api_key.pem"
+region           = "ap-tokyo-1"
+
+# Object Storage namespace (find with: oci os ns get)
+object_storage_namespace = "your-namespace-here"
+
+# Optional overrides (defaults are optimized for Always Free tier)
+cluster_name         = "heracles-oke-cluster"
+kubernetes_version   = "v1.28.2"
+node_pool_name      = "heracles-node-pool"
+node_shape          = "VM.Standard.A1.Flex"
+node_count          = 4
+node_ocpus          = 1
+node_memory_gb      = 6
+node_image_id       = "ocid1.image.oc1.ap-tokyo-1.aaaaaaaaydrjlx7hqbpzpvfob3gavnbfhmptsagw3m7xzlxj4jg5xdpfnnwa"

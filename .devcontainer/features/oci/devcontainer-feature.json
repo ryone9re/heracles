@@ -1,0 +1,6 @@
+{
+    "id": "oci",
+    "version": "1.0.0",
+    "name": "oci",
+    "description": "Oracle Cloud Infrastructure CLI tool"
+}
