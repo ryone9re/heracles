@@ -97,150 +97,44 @@ check_prerequisites() {
     log_success "前提条件チェック完了"
 }
 
-# VCN とサブネットの作成
-create_vcn_resources() {
-    log_step "VCN とネットワークリソースを作成しています..."
+# OCI インフラストラクチャの作成（Terraform経由）
+create_oci_infrastructure() {
+    log_step "TerraformでOCIインフラストラクチャを作成しています..."
     
-    # VCN作成
-    VCN_OCID=$(oci network vcn create \
-        --compartment-id "$COMPARTMENT_OCID" \
-        --display-name "heracles-vcn" \
-        --cidr-block "10.0.0.0/16" \
-        --query 'data.id' \
-        --raw-output)
+    # terraform.tfvars の存在確認
+    if [[ ! -f "platform/environments/prod/terraform.tfvars" ]]; then
+        log_error "terraform.tfvars ファイルが見つかりません"
+        log_info "platform/environments/prod/terraform.tfvars.example をコピーして設定してください"
+        exit 1
+    fi
     
-    log_info "VCN作成完了: $VCN_OCID"
+    cd platform/environments/prod
     
-    # インターネットゲートウェイ作成
-    IGW_OCID=$(oci network internet-gateway create \
-        --compartment-id "$COMPARTMENT_OCID" \
-        --vcn-id "$VCN_OCID" \
-        --display-name "heracles-igw" \
-        --is-enabled true \
-        --query 'data.id' \
-        --raw-output)
+    # Terraform初期化
+    log_info "Terraform初期化中..."
+    terraform init
     
-    log_info "インターネットゲートウェイ作成完了: $IGW_OCID"
+    # Terraform実行計画
+    log_info "Terraform実行計画を作成中..."
+    terraform plan -target=oci_containerengine_cluster.heracles_oke_cluster -target=oci_containerengine_node_pool.heracles_node_pool -out=oci-plan
     
-    # ルートテーブル更新
-    ROUTE_TABLE_OCID=$(oci network vcn get \
-        --vcn-id "$VCN_OCID" \
-        --query 'data."default-route-table-id"' \
-        --raw-output)
+    # OCI インフラストラクチャのデプロイ
+    log_info "OCI インフラストラクチャをデプロイ中..."
+    terraform apply oci-plan
     
-    oci network route-table update \
-        --rt-id "$ROUTE_TABLE_OCID" \
-        --route-rules '[{
-            "destination": "0.0.0.0/0",
-            "destinationType": "CIDR_BLOCK",
-            "networkEntityId": "'$IGW_OCID'"
-        }]' \
-        --force
+    # 出力値を取得
+    CLUSTER_OCID=$(terraform output -raw cluster_id)
+    VCN_OCID=$(terraform output -raw vcn_id)
+    WORKER_SUBNET_OCID=$(terraform output -raw worker_subnet_id)
+    LB_SUBNET_OCID=$(terraform output -raw lb_subnet_id)
+    API_SUBNET_OCID=$(terraform output -raw api_subnet_id)
     
-    # セキュリティリスト更新
-    SECURITY_LIST_OCID=$(oci network vcn get \
-        --vcn-id "$VCN_OCID" \
-        --query 'data."default-security-list-id"' \
-        --raw-output)
+    log_success "OCI インフラストラクチャ作成完了"
+    log_info "クラスターOCID: $CLUSTER_OCID"
     
-    oci network security-list update \
-        --security-list-id "$SECURITY_LIST_OCID" \
-        --ingress-security-rules '[
-            {
-                "source": "0.0.0.0/0",
-                "protocol": "6",
-                "isStateless": false,
-                "tcpOptions": {
-                    "destinationPortRange": {
-                        "min": 6443,
-                        "max": 6443
-                    }
-                }
-            },
-            {
-                "source": "10.0.0.0/16",
-                "protocol": "all",
-                "isStateless": false
-            }
-        ]' \
-        --force
+    export CLUSTER_OCID VCN_OCID WORKER_SUBNET_OCID LB_SUBNET_OCID API_SUBNET_OCID
     
-    # ワーカーノード用サブネット作成
-    WORKER_SUBNET_OCID=$(oci network subnet create \
-        --compartment-id "$COMPARTMENT_OCID" \
-        --vcn-id "$VCN_OCID" \
-        --display-name "heracles-worker-subnet" \
-        --cidr-block "10.0.1.0/24" \
-        --query 'data.id' \
-        --raw-output)
-    
-    # ロードバランサー用サブネット作成
-    LB_SUBNET_OCID=$(oci network subnet create \
-        --compartment-id "$COMPARTMENT_OCID" \
-        --vcn-id "$VCN_OCID" \
-        --display-name "heracles-lb-subnet" \
-        --cidr-block "10.0.2.0/24" \
-        --query 'data.id' \
-        --raw-output)
-    
-    # API Server用サブネット作成
-    API_SUBNET_OCID=$(oci network subnet create \
-        --compartment-id "$COMPARTMENT_OCID" \
-        --vcn-id "$VCN_OCID" \
-        --display-name "heracles-api-subnet" \
-        --cidr-block "10.0.3.0/24" \
-        --query 'data.id' \
-        --raw-output)
-    
-    log_success "VCNとサブネット作成完了"
-    export WORKER_SUBNET_OCID LB_SUBNET_OCID API_SUBNET_OCID VCN_OCID
-}
-
-# OKEクラスターの作成
-create_oke_cluster() {
-    log_step "OKEクラスターを作成しています..."
-    
-    # クラスター作成
-    CLUSTER_OCID=$(oci ce cluster create \
-        --compartment-id "$COMPARTMENT_OCID" \
-        --name "$OKE_CLUSTER_NAME" \
-        --vcn-id "$VCN_OCID" \
-        --kubernetes-version "$KUBERNETES_VERSION" \
-        --service-lb-subnet-ids '["'$LB_SUBNET_OCID'"]' \
-        --endpoint-subnet-id "$API_SUBNET_OCID" \
-        --endpoint-is-public-ip-enabled true \
-        --cluster-pod-network-options '{
-            "cniType": "FLANNEL_OVERLAY"
-        }' \
-        --wait-for-state ACTIVE \
-        --query 'data.id' \
-        --raw-output)
-    
-    log_success "OKEクラスター作成完了: $CLUSTER_OCID"
-    export CLUSTER_OCID
-    
-    # ノードプール作成
-    log_info "ノードプールを作成しています..."
-    
-    NODE_POOL_OCID=$(oci ce node-pool create \
-        --cluster-id "$CLUSTER_OCID" \
-        --compartment-id "$COMPARTMENT_OCID" \
-        --name "$OKE_NODE_POOL_NAME" \
-        --kubernetes-version "$KUBERNETES_VERSION" \
-        --node-image-name "Oracle-Linux-8.8-aarch64-2023.10.24-0" \
-        --node-shape "$NODE_SHAPE" \
-        --node-shape-config "$NODE_SHAPE_CONFIG" \
-        --subnet-ids '["'$WORKER_SUBNET_OCID'"]' \
-        --size "$NODE_COUNT" \
-        --placement-configs '[{
-            "availabilityDomain": "'$(oci iam availability-domain list --compartment-id "$COMPARTMENT_OCID" --query 'data[0].name' --raw-output)'",
-            "subnetId": "'$WORKER_SUBNET_OCID'"
-        }]' \
-        --wait-for-state ACTIVE \
-        --query 'data.id' \
-        --raw-output)
-    
-    log_success "ノードプール作成完了: $NODE_POOL_OCID"
+    cd - > /dev/null
 }
 
 # kubectl設定
@@ -466,8 +360,7 @@ main() {
     
     # 実行ステップ
     check_prerequisites
-    create_vcn_resources
-    create_oke_cluster
+    create_oci_infrastructure
     configure_kubectl
     deploy_terraform_infrastructure
     setup_argocd
