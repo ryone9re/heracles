@@ -1,0 +1,97 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: PostgreSQLCluster
+metadata:
+  name: postgres-main
+  namespace: postgres-operator
+spec:
+  teamId: "heracles"
+  volume:
+    size: "10Gi"
+  numberOfInstances: 2
+  
+  users:
+    app_user:
+      - superuser
+      - createdb
+  
+  databases:
+    app_db: app_user
+  
+  postgresql:
+    parameters:
+      max_connections: "200"
+      shared_buffers: "256MB"
+      effective_cache_size: "1GB"
+      maintenance_work_mem: "64MB"
+      checkpoint_completion_target: "0.9"
+      wal_buffers: "16MB"
+      default_statistics_target: "100"
+      random_page_cost: "1.1"
+      effective_io_concurrency: "200"
+      work_mem: "4MB"
+      min_wal_size: "1GB"
+      max_wal_size: "4GB"
+      max_worker_processes: "8"
+      max_parallel_workers_per_gather: "4"
+      max_parallel_workers: "8"
+      max_parallel_maintenance_workers: "4"
+      
+      # Logging
+      log_destination: "stderr"
+      logging_collector: "on"
+      log_directory: "log"
+      log_filename: "postgresql-%Y-%m-%d_%H%M%S.log"
+      log_statement: "none"
+      log_min_duration_statement: "1000ms"
+      
+      # Extensions
+      shared_preload_libraries: "pg_stat_statements"
+  
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  
+  monitoring:
+    enabled: true
+    podMonitor:
+      enabled: true
+  
+  backup:
+    retentionPolicy: "30d"
+    barmanObjectStore:
+      destinationPath: "s3://heracles-postgres-backup"
+      s3Credentials:
+        accessKeyId:
+          name: backup-creds
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: backup-creds
+          key: SECRET_ACCESS_KEY
+      wal:
+        retention: "5d"
+      data:
+        retention: "30d"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-main-rw
+  namespace: postgres-operator
+  labels:
+    app.kubernetes.io/name: postgres-main
+    cnpg.io/cluster: postgres-main
+    cnpg.io/podRole: master
+spec:
+  type: ClusterIP
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+      protocol: TCP
+  selector:
+    cnpg.io/cluster: postgres-main
+    cnpg.io/podRole: master

@@ -1,0 +1,67 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: knative-serving
+---
+apiVersion: operator.knative.dev/v1beta1
+kind: KnativeServing
+metadata:
+  name: knative-serving
+  namespace: knative-serving
+spec:
+  version: "1.12.1"
+  
+  config:
+    network:
+      ingress-class: kourier.ingress.networking.knative.dev
+      domain-template: "{{.Name}}.{{.Namespace}}.ryone.dev"
+      external-domain-tls: "Enabled"
+      certificate-class: cert-manager.certificate.networking.knative.dev
+    
+    deployment:
+      queueSidecarCPURequest: "25m"
+      queueSidecarMemoryRequest: "25Mi"
+      queueSidecarCPULimit: "100m"
+      queueSidecarMemoryLimit: "200Mi"
+    
+    autoscaler:
+      scale-to-zero-grace-period: "30s"
+      stable-window: "60s"
+      target-concurrency-utilization: "70"
+      max-scale-up-rate: "10"
+      max-scale-down-rate: "2"
+      scale-down-delay: "0s"
+      scale-to-zero-pod-retention-period: "1m"
+    
+    gc:
+      stale-revision-create-delay: "48h"
+      stale-revision-timeout: "15h"
+      stale-revision-minimum-generations: "2"
+    
+    defaults:
+      revision-timeout-seconds: "900"
+      max-revision-timeout-seconds: "3600"
+      revision-cpu-request: "25m"
+      revision-memory-request: "25Mi"
+      revision-cpu-limit: "500m"
+      revision-memory-limit: "512Mi"
+  
+  high-availability:
+    replicas: 2
+  
+  resources:
+    - container: controller
+      requests:
+        cpu: 25m
+        memory: 100Mi
+      limits:
+        cpu: 100m
+        memory: 200Mi
+    
+    - container: webhook
+      requests:
+        cpu: 25m
+        memory: 50Mi
+      limits:
+        cpu: 100m
+        memory: 100Mi

@@ -1,0 +1,94 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: postgres-operator
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://opensource.zalando.com/postgres-operator/charts/postgres-operator
+    chart: postgres-operator
+    targetRevision: 1.10.1
+    helm:
+      values: |
+        image:
+          registry: registry.opensource.zalan.do
+          repository: acid/postgres-operator
+          tag: v1.10.1
+        
+        configGeneral:
+          enable_crd_registration: true
+          enable_lazy_spilo_upgrade: true
+          enable_pgversion_env_var: true
+          enable_spilo_wal_path_compat: true
+          enable_team_superuser: false
+          etcd_host: ""
+          kubernetes_use_configmaps: true
+          
+        configUsers:
+          enable_password_rotation: true
+          password_rotation_interval: 90
+          password_rotation_user_retention: 180
+          replication_username: standby
+          super_username: postgres
+        
+        configKubernetes:
+          cluster_domain: cluster.local
+          cluster_labels: application:spilo
+          cluster_name_label: cluster-name
+          enable_init_containers: true
+          enable_pod_antiaffinity: false
+          enable_pod_disruption_budget: true
+          enable_sidecars: true
+          master_pod_move_timeout: 20m
+          node_readiness_label: ""
+          pdb_name_format: "postgres-{cluster}-pdb"
+          pod_deletion_wait_timeout: 10m
+          pod_label_wait_timeout: 10m
+          pod_management_policy: "ordered_ready"
+          pod_role_label: spilo-role
+          pod_terminate_grace_period: 5m
+          spilo_privileged: false
+          toleration_key: ""
+          watched_namespace: "*"
+        
+        configPostgreSQL:
+          shared_preload_libraries: "pg_stat_statements,pg_cron"
+        
+        configLoadBalancer:
+          enable_master_load_balancer: false
+          enable_replica_load_balancer: false
+        
+        configDebug:
+          debug_logging: true
+          enable_database_access: true
+        
+        resources:
+          limits:
+            cpu: 500m
+            memory: 500Mi
+          requests:
+            cpu: 100m
+            memory: 250Mi
+        
+        rbac:
+          create: true
+        
+        serviceAccount:
+          create: true
+        
+        podServiceAccount:
+          name: "postgres-pod"
+        
+        priorityClassName: ""
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: postgres-operator
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

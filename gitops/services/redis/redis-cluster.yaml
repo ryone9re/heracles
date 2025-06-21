@@ -1,0 +1,149 @@
+apiVersion: redis.redis.opstreelabs.in/v1beta1
+kind: Redis
+metadata:
+  name: redis-main
+  namespace: redis-operator
+spec:
+  kubernetesConfig:
+    image: quay.io/opstree/redis:v7.0.5
+    imagePullPolicy: IfNotPresent
+    
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+    
+    serviceType: ClusterIP
+    
+    redisSecret:
+      name: redis-secret
+      key: password
+  
+  storage:
+    volumeClaimTemplate:
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
+  
+  redisConfig:
+    additional:
+      maxmemory: 200mb
+      maxmemory-policy: allkeys-lru
+      save: "900 1 300 10 60 10000"
+      tcp-keepalive: "60"
+      tcp-backlog: "128"
+      timeout: "300"
+      databases: "16"
+      
+  redisExporter:
+    enabled: true
+    image: quay.io/opstree/redis-exporter:v1.44.0
+    imagePullPolicy: IfNotPresent
+    
+    resources:
+      requests:
+        cpu: 10m
+        memory: 20Mi
+      limits:
+        cpu: 50m
+        memory: 50Mi
+    
+    env:
+      - name: REDIS_EXPORTER_INCL_SYSTEM_METRICS
+        value: "true"
+  
+  serviceMonitor:
+    enabled: true
+    namespace: observability
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-secret
+  namespace: redis-operator
+type: Opaque
+data:
+  password: UmVkaXMxMjM0NQ==  # Redis12345 in base64
+---
+apiVersion: redis.redis.opstreelabs.in/v1beta1
+kind: RedisCluster
+metadata:
+  name: redis-cluster
+  namespace: redis-operator
+spec:
+  clusterSize: 3
+  
+  kubernetesConfig:
+    image: quay.io/opstree/redis:v7.0.5
+    imagePullPolicy: IfNotPresent
+    
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+    
+    serviceType: ClusterIP
+    
+    redisSecret:
+      name: redis-cluster-secret
+      key: password
+  
+  storage:
+    volumeClaimTemplate:
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
+  
+  redisLeader:
+    replicas: 3
+    
+    redisConfig:
+      additional:
+        maxmemory: 200mb
+        maxmemory-policy: allkeys-lru
+        cluster-enabled: "yes"
+        cluster-config-file: nodes.conf
+        cluster-node-timeout: 15000
+  
+  redisFollower:
+    replicas: 3
+    
+    redisConfig:
+      additional:
+        maxmemory: 200mb
+        maxmemory-policy: allkeys-lru
+        cluster-enabled: "yes"
+        cluster-config-file: nodes.conf
+        cluster-node-timeout: 15000
+  
+  redisExporter:
+    enabled: true
+    image: quay.io/opstree/redis-exporter:v1.44.0
+    imagePullPolicy: IfNotPresent
+    
+    resources:
+      requests:
+        cpu: 10m
+        memory: 20Mi
+      limits:
+        cpu: 50m
+        memory: 50Mi
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: redis-cluster-secret
+  namespace: redis-operator
+type: Opaque
+data:
+  password: UmVkaXNDbHVzdGVyMTIzNDU=  # RedisCluster12345 in base64

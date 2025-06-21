@@ -1,0 +1,82 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: minio-operator
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://operator.min.io/
+    chart: operator
+    targetRevision: 5.0.11
+    helm:
+      values: |
+        image:
+          repository: minio/operator
+          tag: v5.0.11
+          pullPolicy: IfNotPresent
+        
+        resources:
+          limits:
+            cpu: 200m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        
+        console:
+          enabled: true
+          image:
+            repository: minio/console
+            tag: v0.22.5
+            pullPolicy: IfNotPresent
+          
+          ingress:
+            enabled: true
+            ingressClassName: nginx
+            host: minio-console.ryone.dev
+            annotations:
+              cert-manager.io/cluster-issuer: letsencrypt-prod
+              nginx.ingress.kubernetes.io/ssl-redirect: "true"
+            tls:
+              - secretName: minio-console-tls
+                hosts:
+                  - minio-console.ryone.dev
+          
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+        
+        nodeSelector: {}
+        
+        tolerations: []
+        
+        affinity: {}
+        
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 1000
+          runAsNonRoot: true
+          fsGroup: 1000
+        
+        serviceAccount:
+          create: true
+          name: minio-operator
+        
+        rbac:
+          create: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: minio-operator
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

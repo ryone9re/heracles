@@ -1,0 +1,107 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: cilium
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://helm.cilium.io/
+    chart: cilium
+    targetRevision: 1.14.4
+    helm:
+      values: |
+        cluster:
+          name: heracles-prod
+          id: 1
+        
+        ipam:
+          mode: kubernetes
+        
+        operator:
+          replicas: 1
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+        
+        hubble:
+          enabled: true
+          metrics:
+            enabled:
+              - dns:query;ignoreAAAA
+              - drop
+              - tcp
+              - flow
+              - icmp
+              - http
+            serviceMonitor:
+              enabled: true
+              namespace: observability
+          
+          relay:
+            enabled: true
+            resources:
+              limits:
+                cpu: 100m
+                memory: 128Mi
+              requests:
+                cpu: 50m
+                memory: 64Mi
+          
+          ui:
+            enabled: true
+            ingress:
+              enabled: true
+              className: nginx
+              hosts:
+                - hubble.ryone.dev
+              annotations:
+                cert-manager.io/cluster-issuer: letsencrypt-prod
+                nginx.ingress.kubernetes.io/ssl-redirect: "true"
+              tls:
+                - secretName: hubble-tls
+                  hosts:
+                    - hubble.ryone.dev
+            resources:
+              limits:
+                cpu: 100m
+                memory: 128Mi
+              requests:
+                cpu: 50m
+                memory: 64Mi
+        
+        prometheus:
+          enabled: true
+          serviceMonitor:
+            enabled: true
+            namespace: observability
+        
+        l7Proxy: true
+        
+        kubeProxyReplacement: partial
+        
+        k8sServiceHost: kubernetes.default.svc.cluster.local
+        k8sServicePort: 443
+        
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

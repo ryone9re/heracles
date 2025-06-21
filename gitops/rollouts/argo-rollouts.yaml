@@ -1,0 +1,104 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argo-rollouts
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://argoproj.github.io/argo-helm
+    chart: argo-rollouts
+    targetRevision: 2.32.7
+    helm:
+      values: |
+        image:
+          repository: quay.io/argoproj/argo-rollouts
+          tag: v1.6.4
+        
+        controller:
+          replicas: 2
+          
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+          
+          metrics:
+            enabled: true
+            serviceMonitor:
+              enabled: true
+              namespace: observability
+          
+          affinity:
+            podAntiAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  podAffinityTerm:
+                    labelSelector:
+                      matchExpressions:
+                        - key: app.kubernetes.io/name
+                          operator: In
+                          values:
+                            - argo-rollouts
+                    topologyKey: kubernetes.io/hostname
+        
+        dashboard:
+          enabled: true
+          
+          image:
+            repository: quay.io/argoproj/kubectl-argo-rollouts
+            tag: v1.6.4
+          
+          ingress:
+            enabled: true
+            ingressClassName: nginx
+            hosts:
+              - rollouts.ryone.dev
+            annotations:
+              cert-manager.io/cluster-issuer: letsencrypt-prod
+              nginx.ingress.kubernetes.io/ssl-redirect: "true"
+            tls:
+              - secretName: rollouts-dashboard-tls
+                hosts:
+                  - rollouts.ryone.dev
+          
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+        
+        notifications:
+          enabled: true
+          
+          image:
+            repository: quay.io/argoproj/argocd
+            tag: v2.8.4
+          
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+        
+        serviceMonitor:
+          enabled: true
+          namespace: observability
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argo-rollouts
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

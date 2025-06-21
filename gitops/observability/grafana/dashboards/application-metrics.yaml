@@ -1,0 +1,100 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: application-metrics-dashboard
+  namespace: observability
+  labels:
+    grafana_dashboard: "1"
+data:
+  application-metrics.json: |
+    {
+      "dashboard": {
+        "id": null,
+        "title": "Application Metrics",
+        "tags": ["application", "knative"],
+        "style": "dark",
+        "timezone": "browser",
+        "templating": {
+          "list": [
+            {
+              "name": "namespace",
+              "type": "query",
+              "query": "label_values(kube_namespace_labels, namespace)",
+              "refresh": 1,
+              "includeAll": true,
+              "allValue": ".*"
+            }
+          ]
+        },
+        "panels": [
+          {
+            "id": 1,
+            "title": "Request Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "sum(rate(http_requests_total{namespace=~\"$namespace\"}[5m])) by (service)",
+                "refId": "A",
+                "legendFormat": "{{service}}"
+              }
+            ],
+            "yAxes": [
+              {
+                "label": "Requests/sec",
+                "min": 0
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
+          },
+          {
+            "id": 2,
+            "title": "Response Time",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])) by (service, le))",
+                "refId": "A",
+                "legendFormat": "95th percentile - {{service}}"
+              },
+              {
+                "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{namespace=~\"$namespace\"}[5m])) by (service, le))",
+                "refId": "B",
+                "legendFormat": "50th percentile - {{service}}"
+              }
+            ],
+            "yAxes": [
+              {
+                "label": "Response Time (s)",
+                "min": 0
+              }
+            ],
+            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
+          },
+          {
+            "id": 3,
+            "title": "Error Rate",
+            "type": "graph",
+            "targets": [
+              {
+                "expr": "sum(rate(http_requests_total{namespace=~\"$namespace\",status=~\"5..\"}[5m])) by (service) / sum(rate(http_requests_total{namespace=~\"$namespace\"}[5m])) by (service) * 100",
+                "refId": "A",
+                "legendFormat": "{{service}}"
+              }
+            ],
+            "yAxes": [
+              {
+                "label": "Error Rate (%)",
+                "min": 0,
+                "max": 100
+              }
+            ],
+            "gridPos": {"h": 8, "w": 24, "x": 0, "y": 8}
+          }
+        ],
+        "time": {
+          "from": "now-1h",
+          "to": "now"
+        },
+        "refresh": "30s"
+      }
+    }
