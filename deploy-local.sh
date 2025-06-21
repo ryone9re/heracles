@@ -73,19 +73,61 @@ check_helm() {
 add_helm_repos() {
     log_info "Adding required Helm repositories..."
     
+    helm repo add argocd https://argoproj.github.io/argo-helm || true
     helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx || true
     helm repo add jetstack https://charts.jetstack.io || true
     helm repo add prometheus-community https://prometheus-community.github.io/helm-charts || true
     helm repo add grafana https://grafana.github.io/helm-charts || true
     helm repo add bitnami https://charts.bitnami.com/bitnami || true
+    helm repo add cilium https://helm.cilium.io/ || true
     
     helm repo update
     log_success "Helm repositories updated"
 }
 
+# Install Prometheus Operator CRDs
+install_prometheus_crds() {
+    log_info "Installing Prometheus Operator CRDs..."
+    
+    kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml || true
+    kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_prometheusrules.yaml || true
+    kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_podmonitors.yaml || true
+    kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_probes.yaml || true
+    
+    wait_for_crd "servicemonitors.monitoring.coreos.com" 60
+    wait_for_crd "prometheusrules.monitoring.coreos.com" 60
+    
+    log_success "Prometheus Operator CRDs installed"
+}
+
+# Deploy Layer 0: GitOps (ArgoCD)
+deploy_layer0() {
+    log_info "=== Deploying Layer 0: GitOps (ArgoCD) ==="
+    
+    # Create ArgoCD namespace
+    kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+    
+    # Install ArgoCD using official manifests
+    log_info "Installing ArgoCD..."
+    kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+    
+    # Wait for ArgoCD to be ready
+    log_info "Waiting for ArgoCD to be ready..."
+    kubectl wait --for=condition=Ready pods --all -n argocd --timeout=300s
+    
+    log_success "Layer 0 (ArgoCD) deployment completed"
+    
+    # Display ArgoCD access info
+    log_info "ArgoCD admin password: $(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d)"
+    log_info "Access ArgoCD: kubectl port-forward svc/argocd-server -n argocd 8080:443"
+}
+
 # Deploy Layer 1: Core Infrastructure
 deploy_layer1() {
     log_info "=== Deploying Layer 1: Core Infrastructure ==="
+    
+    # Skip CNI deployment for local (use default CNI)
+    log_info "Skipping CNI deployment (using default local CNI)..."
     
     # Deploy Ingress NGINX (simplified for local)
     log_info "Deploying Ingress NGINX..."
@@ -152,21 +194,41 @@ deploy_layer3() {
     # Deploy Prometheus (minimal setup)
     log_info "Deploying Prometheus..."
     helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
-        --namespace monitoring \
+        --namespace observability \
         --create-namespace \
         --set prometheus.prometheusSpec.resources.requests.memory=256Mi \
         --set prometheus.prometheusSpec.resources.requests.cpu=100m \
         --set prometheus.prometheusSpec.retention=1d \
-        --set prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.resources.requests.storage=2Gi \
+        --set prometheus.prometheusSpec.storageSpec.volumeClaimTemplate.spec.resources.requests.storage=5Gi \
         --set grafana.resources.requests.memory=64Mi \
         --set grafana.resources.requests.cpu=50m \
         --set grafana.persistence.enabled=true \
-        --set grafana.persistence.size=1Gi \
+        --set grafana.persistence.size=2Gi \
         --set alertmanager.alertmanagerSpec.resources.requests.memory=64Mi \
         --set alertmanager.alertmanagerSpec.resources.requests.cpu=50m \
+        --set alertmanager.alertmanagerSpec.storage.volumeClaimTemplate.spec.resources.requests.storage=2Gi \
         --wait
         
     log_success "Layer 3 deployment completed"
+}
+
+# Test GitOps deployment
+test_gitops_deployment() {
+    log_info "=== Testing GitOps Deployment ==="
+    
+    # Test applying a simple application from gitops directory
+    if [ -f "gitops/services/ingress/nginx-ingress.yaml" ]; then
+        log_info "Testing NGINX Ingress application deployment via ArgoCD..."
+        kubectl apply -f gitops/services/ingress/nginx-ingress.yaml || true
+        
+        # Wait for application to sync
+        sleep 30
+        kubectl get applications -n argocd
+        
+        log_success "GitOps test deployment completed"
+    else
+        log_warning "GitOps directory not found, skipping GitOps test"
+    fi
 }
 
 # Verification function
@@ -197,31 +259,55 @@ main() {
     
     check_helm
     add_helm_repos
+    install_prometheus_crds
     
-    # Deploy in layers
+    # Deploy in layers with proper dependencies
+    deploy_layer0
     deploy_layer1
     deploy_layer2
     deploy_layer3
+    
+    # Test GitOps functionality
+    test_gitops_deployment
     
     # Verify
     verify_deployments
     
     log_success "Heracles local deployment verification completed!"
-    log_info "Access Grafana: kubectl port-forward -n monitoring svc/prometheus-grafana 3000:80"
-    log_info "Grafana credentials: admin / $(kubectl get secret -n monitoring prometheus-grafana -o jsonpath='{.data.admin-password}' | base64 -d)"
+    log_info "Access services:"
+    log_info "  ArgoCD:   kubectl port-forward svc/argocd-server -n argocd 8080:443"
+    log_info "  Grafana:  kubectl port-forward -n observability svc/prometheus-grafana 3000:80"
+    log_info "  "
+    log_info "Credentials:"
+    log_info "  ArgoCD admin:    $(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d 2>/dev/null || echo 'Not available')"
+    log_info "  Grafana admin:   $(kubectl get secret -n observability prometheus-grafana -o jsonpath='{.data.admin-password}' | base64 -d 2>/dev/null || echo 'Not available')"
 }
 
 # Cleanup function
 cleanup() {
     log_info "Cleaning up deployments..."
     
-    helm uninstall prometheus -n monitoring || true
+    # Remove ArgoCD applications first
+    kubectl delete applications --all -n argocd || true
+    
+    # Remove Helm releases
+    helm uninstall prometheus -n observability || true
     helm uninstall redis -n database || true
     helm uninstall postgresql -n database || true
     helm uninstall cert-manager -n cert-manager || true
     helm uninstall ingress-nginx -n ingress-nginx || true
     
-    kubectl delete namespace monitoring database cert-manager ingress-nginx || true
+    # Remove ArgoCD
+    kubectl delete -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml || true
+    
+    # Remove namespaces
+    kubectl delete namespace argocd observability database cert-manager ingress-nginx || true
+    
+    # Remove CRDs
+    kubectl delete crd servicemonitors.monitoring.coreos.com || true
+    kubectl delete crd prometheusrules.monitoring.coreos.com || true
+    kubectl delete crd podmonitors.monitoring.coreos.com || true
+    kubectl delete crd probes.monitoring.coreos.com || true
     
     log_success "Cleanup completed"
 }

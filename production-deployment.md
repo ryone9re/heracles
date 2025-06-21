@@ -162,6 +162,22 @@ groups:
 
 ### 1. 事前準備
 
+#### 依存関係のインストール
+
+```bash
+# Prometheus Operator CRDsの事前インストール（必須）
+kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
+kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_prometheusrules.yaml
+kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_podmonitors.yaml
+
+# ArgoCD初期インストール
+kubectl create namespace argocd
+kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+kubectl wait --for=condition=Ready pods --all -n argocd --timeout=300s
+```
+
+#### Vault設定
+
 ```bash
 # Vault初期化・アンシール
 kubectl exec vault-0 -- vault operator init
@@ -187,11 +203,17 @@ vault kv put secret/harbor/main admin-password=harbor-admin secret-key=harbor-se
 ### 3. ArgoCD設定
 
 ```bash
+# ArgoCD CLIログイン
+argocd login localhost:8080 --username admin --password $(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d)
+
 # プライベートリポジトリの認証情報
 argocd repo add https://github.com/ryone9re/heracles \
     --username git-user \
     --password git-token \
     --name heracles-repo
+
+# Bootstrap Application（App of Apps パターン）の適用
+kubectl apply -f gitops/argocd/app-of-apps.yaml
 ```
 
 ## 災害復旧・バックアップ
@@ -214,17 +236,22 @@ vault operator raft snapshot restore backup.snap
 
 ## 環境別設定例
 
-### Development
+### Development/Local
 
 - シングルレプリカ
-- ローカルストレージ
+- ローカルストレージ (minikube標準)
 - 簡略化されたTLS設定
+- リソース制限: CPU 2コア、メモリ 4GB
+- ストレージ: 20GB
+- 自動デプロイ: `./deploy-local.sh`
 
 ### Staging
 
 - 本番同等のHA構成
 - 本番データのマスキング版使用
 - 全機能のテスト環境
+- リソース制限: CPU 4コア、メモリ 8GB
+- ストレージ: 50GB
 
 ### Production
 
@@ -233,6 +260,7 @@ vault operator raft snapshot restore backup.snap
 - 24/7監視・アラート
 - 定期バックアップ
 - コンプライアンス対応
+- リソース制限: 無料枠範囲内での最大構成
 
 ## セキュリティ監査
 
@@ -253,15 +281,76 @@ vault operator raft snapshot restore backup.snap
 
 ### よくある問題
 
-1. **External Secrets同期失敗**
+1. **ArgoCD ApplicationのSyncエラー**
+   - Prometheus CRDの事前インストール確認
+   - リポジトリアクセス権限の確認
+   - YAML構文エラーの確認
+   ```bash
+   kubectl describe application <app-name> -n argocd
+   ```
+
+2. **External Secrets同期失敗**
    - Vault認証の確認
    - ネットワーク接続の確認
    - ポリシー設定の確認
 
-2. **Vault Unseal失敗**
+3. **Vault Unseal失敗**
    - キーシェアの確認
    - ストレージ接続の確認
 
-3. **シークレット更新の遅延**
+4. **シークレット更新の遅延**
    - refreshInterval設定の確認
    - Operator のリソース制限確認
+
+5. **リソース不足エラー**
+   - ノードリソース使用量の確認
+   ```bash
+   kubectl top nodes
+   kubectl describe nodes
+   ```
+
+6. **Pod起動失敗（ContainerCreating状態）**
+   - イメージプルエラーの確認
+   - ストレージ不足の確認
+   - ネットワークポリシーの確認
+   ```bash
+   kubectl describe pod <pod-name> -n <namespace>
+   ```
+
+## 運用コマンド集
+
+### 日常運用コマンド
+
+```bash
+# クラスター全体の状態確認
+kubectl get nodes,pods --all-namespaces
+
+# ArgoCD管理下のアプリケーション状態確認
+kubectl get applications -n argocd
+
+# シークレット同期状態確認
+kubectl get externalsecrets --all-namespaces
+
+# Vault状態確認
+kubectl exec -n vault vault-0 -- vault status
+
+# メトリクス確認
+kubectl top nodes
+kubectl top pods --all-namespaces
+```
+
+### 緊急時対応コマンド
+
+```bash
+# アプリケーション手動同期
+kubectl patch application <app-name> -n argocd -p '{"operation":{"sync":{}}}' --type merge
+
+# シークレット強制更新
+kubectl annotate externalsecret <secret-name> -n <namespace> force-sync="$(date +%s)"
+
+# Pod強制再起動
+kubectl rollout restart deployment <deployment-name> -n <namespace>
+
+# ログ確認
+kubectl logs -f deployment/<deployment-name> -n <namespace>
+```
