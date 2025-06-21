@@ -5,7 +5,6 @@
 		"vscode": {
 			"extensions": [
 				"hashicorp.terraform",
-				"Infracost.infracost",
 				"pjmiravalle.terraform-advanced-syntax-highlighting"
 			]
 		}

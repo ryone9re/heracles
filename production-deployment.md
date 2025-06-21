@@ -285,6 +285,7 @@ vault operator raft snapshot restore backup.snap
    - Prometheus CRDの事前インストール確認
    - リポジトリアクセス権限の確認
    - YAML構文エラーの確認
+
    ```bash
    kubectl describe application <app-name> -n argocd
    ```
@@ -304,6 +305,7 @@ vault operator raft snapshot restore backup.snap
 
 5. **リソース不足エラー**
    - ノードリソース使用量の確認
+
    ```bash
    kubectl top nodes
    kubectl describe nodes
@@ -313,6 +315,7 @@ vault operator raft snapshot restore backup.snap
    - イメージプルエラーの確認
    - ストレージ不足の確認
    - ネットワークポリシーの確認
+
    ```bash
    kubectl describe pod <pod-name> -n <namespace>
    ```
