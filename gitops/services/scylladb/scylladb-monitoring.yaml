@@ -1,0 +1,104 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: scylladb-main
+  namespace: scylladb-system
+  labels:
+    app.kubernetes.io/name: scylladb-main
+    release: prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: scylla
+      scylla/cluster: scylladb-main
+  endpoints:
+    - port: prometheus
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: scylladb-agent
+  namespace: scylladb-system
+  labels:
+    app.kubernetes.io/name: scylladb-agent
+    release: prometheus-stack
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: scylla
+      scylla/cluster: scylladb-main
+  endpoints:
+    - port: agent-prometheus
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: scylladb-alerts
+  namespace: scylladb-system
+  labels:
+    app.kubernetes.io/name: scylladb-alerts
+    release: prometheus-stack
+spec:
+  groups:
+    - name: scylladb.rules
+      interval: 30s
+      rules:
+        - alert: ScyllaDBNodeDown
+          expr: up{job="scylladb-main"} == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "ScyllaDB node is down"
+            description: "ScyllaDB node {{ $labels.instance }} has been down for more than 1 minute."
+
+        - alert: ScyllaDBHighMemoryUsage
+          expr: scylla_memory_total_memory_bytes - scylla_memory_free_memory_bytes > scylla_memory_total_memory_bytes * 0.9
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ScyllaDB high memory usage"
+            description: "ScyllaDB node {{ $labels.instance }} memory usage is above 90% for more than 5 minutes."
+
+        - alert: ScyllaDBHighCPUUsage
+          expr: rate(scylla_reactor_utilization[5m]) > 0.8
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ScyllaDB high CPU usage"
+            description: "ScyllaDB node {{ $labels.instance }} CPU usage is above 80% for more than 5 minutes."
+
+        - alert: ScyllaDBHighReadLatency
+          expr: histogram_quantile(0.99, rate(scylla_storage_proxy_coordinator_read_latency_bucket[5m])) > 100000
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ScyllaDB high read latency"
+            description: "ScyllaDB node {{ $labels.instance }} 99th percentile read latency is above 100ms for more than 5 minutes."
+
+        - alert: ScyllaDBHighWriteLatency
+          expr: histogram_quantile(0.99, rate(scylla_storage_proxy_coordinator_write_latency_bucket[5m])) > 100000
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ScyllaDB high write latency"
+            description: "ScyllaDB node {{ $labels.instance }} 99th percentile write latency is above 100ms for more than 5 minutes."
+
+        - alert: ScyllaDBHighDiskUsage
+          expr: (scylla_commitlog_disk_total_bytes - scylla_commitlog_disk_free_bytes) / scylla_commitlog_disk_total_bytes > 0.85
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "ScyllaDB high disk usage"
+            description: "ScyllaDB node {{ $labels.instance }} disk usage is above 85% for more than 5 minutes."

@@ -1,0 +1,150 @@
+apiVersion: scylla.scylladb.com/v1
+kind: ScyllaCluster
+metadata:
+  name: scylladb-main
+  namespace: scylladb-system
+spec:
+  version: 5.4.3
+  agentVersion: 3.2.6
+  developerMode: false
+
+  datacenter:
+    name: dc1
+    racks:
+      - name: rack1
+        scyllaConfig: scylla-config
+        scyllaAgentConfig: scylla-agent-config
+        members: 1
+        storage:
+          capacity: 10Gi
+          storageClassName: oci-bv
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+        placement:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  labelSelector:
+                    matchExpressions:
+                      - key: app.kubernetes.io/name
+                        operator: In
+                        values:
+                          - scylla
+                  topologyKey: kubernetes.io/hostname
+
+  sysctls:
+    - "fs.aio-max-nr=1048576"
+
+  network:
+    hostNetworking: false
+
+  backups:
+    - name: daily-backup
+      rateLimit:
+        - "50"
+      location:
+        - "s3:heracles-scylladb-backup"
+      interval: "24h"
+      keyspace:
+        - "*"
+      retention: 168h # 7 days
+
+  repairs:
+    - name: weekly-repair
+      interval: "168h"
+      intensity: 0.1
+      parallelism: 1
+      keyspace:
+        - "*"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: scylla-config
+  namespace: scylladb-system
+data:
+  scylla.yaml: |
+    cluster_name: 'heracles-scylla'
+
+    # Authentication
+    authenticator: PasswordAuthenticator
+    authorizer: CassandraAuthorizer
+
+    # Performance tuning for OAuth workload
+    concurrent_reads: 32
+    concurrent_writes: 32
+    concurrent_counter_writes: 32
+    concurrent_materialized_view_writes: 32
+
+    # Memory settings
+    memtable_allocation_type: heap_buffers
+    commitlog_sync: periodic
+    commitlog_sync_period_in_ms: 10000
+
+    # Compaction
+    compaction_throughput_mb_per_sec: 64
+
+    # Networking
+    rpc_address: 0.0.0.0
+    broadcast_rpc_address_type: interface
+    rpc_interface: eth0
+
+    # Security
+    enable_user_defined_functions: false
+    enable_scripted_user_defined_functions: false
+
+    # Logging
+    enable_sasi_indexes: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: scylla-agent-config
+  namespace: scylladb-system
+data:
+  scylla-agent.yaml: |
+    prometheus: ':56090'
+    https: ':56080'
+    debug: ':56112'
+
+    # S3 backup configuration
+    s3:
+      provider: "AWS"
+      region: "ap-tokyo-1"
+      endpoint: "https://objectstorage.ap-tokyo-1.oraclecloud.com"
+      
+    # SSL/TLS
+    tls_cert_file: ""
+    tls_key_file: ""
+
+    # Logging
+    log_level: "info"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: scylladb-main-client
+  namespace: scylladb-system
+  labels:
+    app.kubernetes.io/name: scylladb-main
+    scylla/cluster: scylladb-main
+spec:
+  type: ClusterIP
+  ports:
+    - name: cql
+      port: 9042
+      targetPort: 9042
+      protocol: TCP
+    - name: thrift
+      port: 9160
+      targetPort: 9160
+      protocol: TCP
+  selector:
+    app.kubernetes.io/name: scylla
+    scylla/cluster: scylladb-main

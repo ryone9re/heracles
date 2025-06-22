@@ -1,0 +1,64 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: scylladb-operator
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://scylladb.github.io/scylla-operator
+    chart: scylla-operator
+    targetRevision: 1.11.0
+    helm:
+      values: |
+        image:
+          tag: "1.11.0"
+
+        resources:
+          limits:
+            cpu: 200m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+
+        nodeSelector: {}
+        tolerations: []
+        affinity: {}
+
+        webhook:
+          enabled: true
+          port: 9443
+          
+        serviceMonitor:
+          enabled: true
+          namespace: scylladb-system
+          labels:
+            release: prometheus-stack
+            
+        scyllaImage:
+          tag: "5.4.3"
+          
+        managerAgent:
+          resources:
+            limits:
+              cpu: 100m
+              memory: 128Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+              
+        developerMode: false
+
+        logLevel: "2"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: scylladb-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
