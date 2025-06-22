@@ -12,3 +12,4 @@ resources:
   - postgres/
   - redis/
   - minio/
+  - scylladb/
