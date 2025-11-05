@@ -6,7 +6,6 @@
 
 This guide explains how to expose Knative services at `<service>.<namespace>.apps.heracles.ryone.dev` using Cloudflare-managed DNS.
 
-## 前提条件 (Prerequisites)
 - Cloudflare ゾーン: `heracles.ryone.dev` または親ドメイン `ryone.dev` からのサブドメイン委譲
 - 権限を持つ API Token: Zone:DNS:Edit, Zone:Read
 - ExternalDNS (Cloudflare provider) が対象ゾーン向けにデプロイ済み
