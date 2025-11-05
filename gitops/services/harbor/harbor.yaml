@@ -35,7 +35,7 @@ spec:
         
         # 管理者パスワードは外部シークレット (ExternalSecret + Vault) で管理し、ここには平文を置かないこと。
         # Chart の必須フィールド回避のためプレースホルダ。初回起動後 ExternalSecret で上書きされる運用を想定。
-        harborAdminPassword: "CHANGEME-OVERRIDDEN-BY-EXTERNALSECRET"
+        harborAdminPassword: {{ randAlphaNum 32 | quote }}
         
         core:
           resources:
