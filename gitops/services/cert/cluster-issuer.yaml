@@ -2,9 +2,11 @@ apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
   name: letsencrypt-prod
+  annotations:
+    argocd.argoproj.io/sync-wave: "15"
 spec:
   acme:
-    email: ryone9re@gmail.com
+    email: devops@ryone.dev
     server: https://acme-v02.api.letsencrypt.org/directory
     privateKeySecretRef:
       name: letsencrypt-prod
@@ -12,14 +14,21 @@ spec:
       - http01:
           ingress:
             class: nginx
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              name: cloudflare-api-token
+              key: api-token
 ---
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
 metadata:
   name: letsencrypt-staging
+  annotations:
+    argocd.argoproj.io/sync-wave: "15"
 spec:
   acme:
-    email: ryone9re@gmail.com
+    email: devops@ryone.dev
     server: https://acme-staging-v02.api.letsencrypt.org/directory
     privateKeySecretRef:
       name: letsencrypt-staging
@@ -27,3 +36,8 @@ spec:
       - http01:
           ingress:
             class: nginx
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              name: cloudflare-api-token
+              key: api-token

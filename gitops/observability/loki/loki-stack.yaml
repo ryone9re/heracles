@@ -6,7 +6,7 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: default
+  project: observability
   source:
     repoURL: https://grafana.github.io/helm-charts
     chart: loki

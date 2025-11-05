@@ -58,14 +58,14 @@ spec:
             enabled: true
             ingressClassName: nginx
             hosts:
-              - rollouts.ryone.dev
+              - rollouts.heracles.ryone.dev
             annotations:
               cert-manager.io/cluster-issuer: letsencrypt-prod
               nginx.ingress.kubernetes.io/ssl-redirect: "true"
             tls:
               - secretName: rollouts-dashboard-tls
                 hosts:
-                  - rollouts.ryone.dev
+                  - rollouts.heracles.ryone.dev
           
           resources:
             limits:

@@ -1,0 +1,51 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: heracles-core-alerts
+  namespace: observability
+  labels:
+    prometheus: kube-prometheus-stack
+    role: alert-rules
+spec:
+  groups:
+    - name: node-health
+      rules:
+        - alert: HighNodeCPU
+          expr: avg(rate(node_cpu_seconds_total{mode!="idle"}[5m])) > 0.8
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: High average node CPU (>80%)
+        - alert: HighNodeMemory
+          expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes > 0.85
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: High node memory usage (>85%)
+    - name: workload-health
+      rules:
+        - alert: PodCrashLooping
+          expr: increase(kube_pod_container_status_restarts_total[10m]) > 3
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: Pod has restarted frequently
+        - alert: ArgoCDAppOutOfSync
+          expr: count(argocd_app_status_synced{} == 0) > 0
+          for: 10m
+          labels:
+            severity: info
+          annotations:
+            summary: One or more ArgoCD applications are out of sync
+    - name: storage-health
+      rules:
+        - alert: PVCUsageHigh
+          expr: ( kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes ) > 0.9
+          for: 15m
+          labels:
+            severity: warning
+          annotations:
+            summary: PVC usage > 90%

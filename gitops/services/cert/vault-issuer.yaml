@@ -1,0 +1,40 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: vault-pki-issuer
+  namespace: cert-manager
+  labels:
+    heracles.dev/component: cert-manager
+spec:
+  vault:
+    server: http://vault.vault:8200
+    path: pki_int/sign/heracles
+    auth:
+      kubernetes:
+        role: cert-manager-pki
+        mountPath: /v1/auth/kubernetes
+        # Vault側で role と policy を作成済みであることが前提。
+        # 例: vault write auth/kubernetes/role/cert-manager-pki bound_service_account_names=cert-manager bound_service_account_namespaces=cert-manager policies=cert-manager-pki ttl=1h
+---
+# 任意: Vault PKI を使った内部 mTLS 用サンプル証明書 (短期運用例)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: internal-heracles-example
+  namespace: cert-manager
+spec:
+  secretName: internal-heracles-example-tls
+  issuerRef:
+    name: vault-pki-issuer
+    kind: Issuer
+  commonName: internal-heracles.heracles.local
+  dnsNames:
+    - internal-heracles.heracles.local
+  usages:
+    - server auth
+    - client auth
+  renewBefore: 720h
+  privateKey:
+    rotationPolicy: Always
+    algorithm: RSA
+    size: 2048

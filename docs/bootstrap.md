@@ -1,51 +1,48 @@
-# Heracles 0からの完全構築ガイド
+# Heracles 完全ブートストラップガイド
 
-このガイドでは、Oracle Kubernetes Engine (OKE) 上でHeracles環境を完全に0から構築する手順を説明します。
+Oracle Kubernetes Engine (OKE) 上に Heracles 基盤を 0 から構築し、Cloudflare 管理ドメインで Knative アプリを即時公開するまでの最短手順をまとめます。
 
-## 🎯 構成概要
+## 🎯 概要
 
-**インフラ構成:**
+| カテゴリ | 内容 |
+|----------|------|
+| クラスター | OKE (制御プレーン無料) + A1.Flex ワーカー最大4台 |
+| ノード形状 | VM.Standard.A1.Flex (1 OCPU / 6GB RAM) × 4 = 4 OCPU / 24GB RAM |
+| GitOps | ArgoCD (HelmでTerraform適用 + App-of-Apps) |
+| Secrets | Vault + External Secrets Operator |
+| Observability | Prometheus / Grafana / Loki / Tempo / OTel Collector |
+| Delivery | Argo Rollouts (段階的デプロイ) |
+| Registry | Harbor |
+| Serverless | Knative (domain-template 変更可能) |
+| DNS | ExternalDNS (Cloudflare) + cert-manager (ACME) |
 
-- **OKEクラスター**: コントロールプレーン（無料）+ ワーカー4台
-- **ワーカーノード**: VM.Standard.A1.Flex（各1 OCPU, 6GB RAM）
-- **総リソース**: 4 OCPU, 24GB RAM（無料枠フル活用）
-
-**アーキテクチャ:**
-
-- **GitOps**: ArgoCD によるアプリケーション管理
-- **シークレット管理**: HashiCorp Vault + External Secrets Operator
-- **監視**: Prometheus + Grafana + Loki + Tempo
-- **データベース**: PostgreSQL/Redis Operators
-- **レジストリ**: Harbor
-- **サーバーレス**: Knative
+> 無料枠前提構成。負荷増に合わせて `node_count` / リソース requests を後で調整してください。
 
 ## 🚀 クイックスタート
 
 ### 1. 事前準備
 
 ```bash
-# 必要なツールのインストール確認
-oci --version           # Oracle Cloud CLI
-kubectl version        # Kubernetes CLI
-helm version          # Helm Package Manager
-terraform --version   # Infrastructure as Code
+oci --version            # OCI CLI
+kubectl version          # Kubernetes CLI
+helm version             # Helm
+terraform --version      # Terraform
 
 # OCI環境変数設定
 export OCI_COMPARTMENT_OCID="ocid1.compartment.oc1..your-compartment-id"
-export GITHUB_TOKEN="ghp_your-github-token"  # オプション
+export GITHUB_TOKEN="ghp_your-github-token"              # private repo 認証が必要な場合
+export CF_API_TOKEN="cf_api_token_with_dns_edit_rights"  # Cloudflare DNS 用（ExternalDNS）
+export SHOW_CREDENTIALS=true                               # 初回のみ管理者PWを表示したい場合
 ```
 
 ### 2. 完全構築（ワンコマンド）
 
 ```bash
-# OKE環境構築（20-30分）
-./deploy-oke.sh
-
-# アプリケーション展開（15-20分）
-./deploy-apps.sh
+./deploy-oke.sh            # 基盤構築 (Terraform + ArgoCD + Vault 初期化) 20-30分
+./deploy-apps.sh           # 各スタック同期 (Ingress / cert / DNS / Observability / Operators / Knative) 15-20分
 ```
 
-### 3. アクセス確認
+### 3. 基本アクセス (ポートフォワード)
 
 ```bash
 # ArgoCD UI
@@ -64,13 +61,12 @@ kubectl port-forward -n harbor svc/harbor-core 8080:80
 
 ```bash
 # deploy-oke.sh の実行内容:
-# 1. VCN・サブネット作成
-# 2. OKEクラスター作成（コントロールプレーン）
-# 3. ワーカーノードプール作成（4台）
-# 4. kubectl設定
-# 5. Terraform実行（名前空間・ArgoCD）
-# 6. ArgoCD初期設定
-# 7. Vault初期化・設定
+# 1. VCN / Subnets
+# 2. OKE Cluster + NodePool
+# 3. kubeconfig 生成
+# 4. Terraform: Namespaces + ArgoCD Helm Release
+# 5. ArgoCD 初期パスワード取得 / CLI インストール
+# 6. Vault (idempotent init) & Kubernetes auth enable
 
 ./deploy-oke.sh --help  # ヘルプ表示
 ```
@@ -85,46 +81,39 @@ kubectl port-forward -n harbor svc/harbor-core 8080:80
 🔐 ArgoCD Admin: admin / AbCdEf123456
 ```
 
-### ステップ2: アプリケーション展開
+### ステップ2: 基盤サービス / アプリ層展開
 
 ```bash
 # deploy-apps.sh の実行内容:
-# 1. ArgoCD Applications同期
-# 2. コアサービス展開（Ingress、cert-manager）
-# 3. Vault設定完了
-# 4. 監視スタック展開
-# 5. データベースオペレーター展開
-# 6. Harbor・Knative展開
+# 1. ArgoCD 主要アプリ同期 (bootstrap, observability, secrets, services)
+# 2. Ingress / cert-manager / ExternalDNS 準備
+# 3. Vault ロール & ポリシー設定 (External Secrets 連携)
+# 4. Observability Stack readiness (Prometheus/Grafana etc.)
+# 5. DB Operators (Postgres/Redis/MinIO/ScyllaDB) readiness
+# 6. Harbor + Knative readiness
 
 ./deploy-apps.sh --help  # ヘルプ表示
 ```
 
 **実行時間**: 約15-20分
 
-**段階実行も可能**:
+**段階的実行例**:
 
 ```bash
 ./deploy-apps.sh --sync-only    # ArgoCD同期のみ
 ./deploy-apps.sh --verify-only  # 検証のみ
 ```
 
-### ステップ3: バックアップ・災害復旧
+### ステップ3: Cloudflare ドメイン設定 (任意)
 
-```bash
-# 定期バックアップ
-./disaster-recovery.sh backup
+Cloudflare DNS + ExternalDNS + cert-manager による `{{service}}.{{namespace}}.heracles.ryone.dev` / `apps.heracles.ryone.dev` 発行:
+1. `external-dns` Secret 作成: `kubectl create secret generic cloudflare-api-token -n external-dns --from-literal=api-token="$CF_API_TOKEN"`
+2. 必要なら DNS-01 ClusterIssuer 追加（`docs/domain-setup.md` 参照）
+3. Knative `config-domain` ConfigMap を確認/編集（`gitops/services/knative/config-domain.yaml`）
+4. サンプルサービスデプロイ: `kubectl create ns apps && kubectl apply -k apps/sample-service/base`
+5. `kubectl get ksvc -n apps sample-service -o jsonpath='{.status.url}'` でホスト確認
 
-# バックアップ一覧
-./disaster-recovery.sh list
-
-# 復元
-./disaster-recovery.sh restore ~/.heracles/backups/backup.tar.gz
-
-# 災害復旧テスト
-./disaster-recovery.sh test
-```
-
-## 🔧 個別コンポーネント操作
+## 🔧 コンポーネント操作例
 
 ### ArgoCD
 
@@ -132,15 +121,14 @@ kubectl port-forward -n harbor svc/harbor-core 8080:80
 # Applications確認
 kubectl get applications -n argocd
 
-# 手動同期
-kubectl patch application <app-name> -n argocd -p '{"operation":{"sync":{}}}' --type merge
+argocd app sync <app-name>   # CLI 経由の明示的同期
 
 # UI アクセス
 kubectl port-forward svc/argocd-server -n argocd 8080:443
 # https://localhost:8080 (admin/パスワード)
 ```
 
-### Vault
+### Vault (初期化後)
 
 ```bash
 # 状態確認
@@ -154,7 +142,7 @@ kubectl port-forward -n vault svc/vault 8200:8200
 # http://localhost:8200
 ```
 
-### 監視
+### Observability
 
 ```bash
 # Grafana アクセス
@@ -176,7 +164,7 @@ kubectl port-forward -n harbor svc/harbor-core 8080:80
 docker login localhost:8080
 ```
 
-## 🔒 セキュリティ設定
+## 🔒 セキュリティ / ハードニング
 
 ### 初期パスワード変更
 
@@ -188,7 +176,7 @@ argocd account update-password --account admin --current-password <current> --ne
 kubectl exec -n observability deployment/prometheus-grafana -- grafana-cli admin reset-admin-password <new-password>
 ```
 
-### Vault認証設定
+### Vault追加認証例 (GitHub)
 
 ```bash
 # GitHub認証有効化
@@ -198,7 +186,7 @@ kubectl exec vault-0 -n vault -- vault auth enable github
 kubectl exec vault-0 -n vault -- vault write auth/github/config organization=<your-org>
 ```
 
-## 🚨 トラブルシューティング
+## 🚨 トラブルシュート
 
 ### よくある問題
 
@@ -227,19 +215,13 @@ kubectl exec vault-0 -n vault -- vault write auth/github/config organization=<yo
    kubectl describe application <app-name> -n argocd
    ```
 
-### 完全リセット
+### リセット (手動)
 
-```bash
-# 環境完全削除
-./deploy-oke.sh cleanup
+現状 `cleanup` スクリプトは未提供。再構築したい場合は Terraform 管理リソースを `terraform destroy` + 手動 OCI リソース削除後に再実行。
 
-# 完全再構築
-./disaster-recovery.sh rebuild
-```
+## 📊 リソース監視と主要メトリクス
 
-## 📊 リソース監視
-
-### 重要メトリクス
+### 基本メトリクス確認
 
 ```bash
 # ノードリソース使用量
@@ -252,7 +234,7 @@ kubectl top pods --all-namespaces
 kubectl get pvc --all-namespaces
 ```
 
-### アラート設定
+### 推奨アラート (Grafana / PrometheusRule)
 
 Grafanaで以下のアラートを設定することを推奨:
 
@@ -262,9 +244,9 @@ Grafanaで以下のアラートを設定することを推奨:
 - Pod再起動頻度
 - ArgoCD同期失敗
 
-## 🌟 最適化のヒント
+## 🌟 最適化ヒント
 
-### パフォーマンス
+### パフォーマンス調整例
 
 1. **リソースリクエスト調整**
 
@@ -312,7 +294,14 @@ Grafanaで以下のアラートを設定することを推奨:
 - [Vault Documentation](https://www.vaultproject.io/docs)
 - [Prometheus Operator](https://prometheus-operator.dev/)
 
-## 🤝 サポート
+## 🤝 サポート / 次のステップ
+
+1. ApplicationSet 導入で `apps/*` 自動同期
+2. Wildcard 証明書 (`*.apps.heracles.ryone.dev`) 追加
+3. Rollouts メトリクス判定ルール整備
+4. Vault PKI engine を cert-manager Issuer として統合（長期）
+
+問題発生時はトラブルシュート表と `docs/domain-setup.md` を参照してください。
 
 問題が発生した場合:
 

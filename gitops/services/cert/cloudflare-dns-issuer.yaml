@@ -1,0 +1,21 @@
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-cloudflare
+  labels:
+    heracles.dev/component: cert-manager
+spec:
+  acme:
+    email: devops@ryone.dev
+    server: https://acme-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: letsencrypt-cloudflare
+    solvers:
+      - dns01:
+          cloudflare:
+            apiTokenSecretRef:
+              name: cloudflare-api-token   # Must exist in cert-manager namespace
+              key: api-token
+  # Notes:
+  # 1. Secret 作成例: kubectl create secret generic cloudflare-api-token -n cert-manager --from-literal=api-token=$CF_API_TOKEN
+  # 2. Use annotation: cert-manager.io/cluster-issuer: letsencrypt-cloudflare on Ingress / Certificate resources.

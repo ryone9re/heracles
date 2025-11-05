@@ -6,7 +6,7 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: default
+  project: platform
   source:
     repoURL: https://helm.goharbor.io
     chart: harbor
@@ -23,17 +23,19 @@ spec:
               notarySecretName: notary-tls
           ingress:
             hosts:
-              core: harbor.ryone.dev
-              notary: notary.ryone.dev
+              core: harbor.heracles.ryone.dev
+              notary: notary.heracles.ryone.dev
             className: nginx
             annotations:
               cert-manager.io/cluster-issuer: letsencrypt-prod
               nginx.ingress.kubernetes.io/ssl-redirect: "true"
               nginx.ingress.kubernetes.io/proxy-body-size: "0"
         
-        externalURL: https://harbor.ryone.dev
+        externalURL: https://harbor.heracles.ryone.dev
         
-        harborAdminPassword: "Harbor12345"
+        # 管理者パスワードは外部シークレット (ExternalSecret + Vault) で管理し、ここには平文を置かないこと。
+        # Chart の必須フィールド回避のためプレースホルダ。初回起動後 ExternalSecret で上書きされる運用を想定。
+        harborAdminPassword: {{ randAlphaNum 32 | quote }}
         
         core:
           resources:

@@ -6,7 +6,7 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: default
+  project: platform
   source:
     repoURL: https://helm.releases.hashicorp.com
     chart: vault
@@ -19,7 +19,8 @@ spec:
         
         server:
           image:
-            repository: vault
+            # Use official HashiCorp repository and latest stable tag
+            repository: hashicorp/vault
             tag: 1.15.2
           
           standalone:
@@ -48,7 +49,7 @@ spec:
             enabled: true
             ingressClassName: nginx
             hosts:
-              - host: vault.ryone.dev
+              - host: vault.heracles.ryone.dev
                 paths:
                   - /
             annotations:
@@ -58,7 +59,7 @@ spec:
             tls:
               - secretName: vault-tls
                 hosts:
-                  - vault.ryone.dev
+                  - vault.heracles.ryone.dev
           
           dataStorage:
             enabled: true

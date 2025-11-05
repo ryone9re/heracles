@@ -19,7 +19,7 @@ spec:
     serviceType: ClusterIP
     
     redisSecret:
-      name: redis-secret
+      name: redis-credentials
       key: password
   
   storage:
@@ -61,15 +61,6 @@ spec:
     enabled: true
     namespace: observability
 ---
-apiVersion: v1
-kind: Secret
-metadata:
-  name: redis-secret
-  namespace: redis-operator
-type: Opaque
-data:
-  password: UmVkaXMxMjM0NQ==  # Redis12345 in base64
----
 apiVersion: redis.redis.opstreelabs.in/v1beta1
 kind: RedisCluster
 metadata:
@@ -93,7 +84,7 @@ spec:
     serviceType: ClusterIP
     
     redisSecret:
-      name: redis-cluster-secret
+      name: redis-credentials
       key: password
   
   storage:
@@ -139,11 +130,3 @@ spec:
         cpu: 50m
         memory: 50Mi
 ---
-apiVersion: v1
-kind: Secret
-metadata:
-  name: redis-cluster-secret
-  namespace: redis-operator
-type: Opaque
-data:
-  password: UmVkaXNDbHVzdGVyMTIzNDU=  # RedisCluster12345 in base64

@@ -2,12 +2,16 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: kourier-system
+  annotations:
+    argocd.argoproj.io/sync-wave: "25"
 ---
 apiVersion: operator.knative.dev/v1beta1
 kind: KnativeServing
 metadata:
   name: knative-serving
   namespace: knative-serving
+  annotations:
+    argocd.argoproj.io/sync-wave: "25"
 spec:
   ingress:
     kourier:
@@ -19,6 +23,8 @@ kind: ConfigMap
 metadata:
   name: config-kourier
   namespace: knative-serving
+  annotations:
+    argocd.argoproj.io/sync-wave: "25"
 data:
   _example: |
     enable-service-mesh: "false"
@@ -34,14 +40,15 @@ metadata:
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
     nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    argocd.argoproj.io/sync-wave: "25"
 spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - "*.ryone.dev"
+        - "*.heracles.ryone.dev"
       secretName: knative-wildcard-tls
   rules:
-    - host: "*.ryone.dev"
+    - host: "*.heracles.ryone.dev"
       http:
         paths:
           - path: /

@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Root kustomization enabling App-of-Apps style aggregation if desired.
+# Lists component directories; ArgoCD Application "app-of-apps" can reference this path.
+# Each sub-directory may itself contain kustomization.yaml and resources.
+# If you rely solely on distinct ArgoCD Applications, this file provides a consolidated roll-out option.
+
+resources:
+  - argocd/
+  - observability/
+  - rollouts/
+  - secrets/
+  - services/

@@ -1,0 +1,27 @@
+# Terraform local state & sensitive variable files
+*.tfstate
+*.tfstate.*
+.terraform/
+crash.log
+
+# Local overrides (not committed)
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Variable files containing secrets (keep only the .example variants in Git)
+terraform.tfvars
+*.tfvars
+*.tfvars.json
+*.auto.tfvars
+*.auto.tfvars.json
+platform/environments/*/terraform.tfvars
+
+# Shell environment files
+.env
+.env.*
+
+# Editor / OS
+.DS_Store
+*.swp
