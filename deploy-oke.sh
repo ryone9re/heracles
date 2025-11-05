@@ -248,6 +248,50 @@ EOF
     log_warning "Vaultキーとトークンは ~/.heracles/vault-keys.json に保存されました"
 }
 
+# Vault cert-manager 用 Kubernetes auth ロール/ポリシー設定 ----------------------
+configure_vault_cert_manager_role() {
+    log_step "Vault に cert-manager 用ロールを構成しています..."
+
+    # Vault Pod 確認
+    if ! kubectl get pod -n vault -l app.kubernetes.io/name=vault | grep -q vault-0; then
+        log_warning "Vault Pod が未検出のためロール設定をスキップ"
+        return
+    fi
+
+    # Kubernetes Auth 設定: 既に設定済みなら上書き（安全）
+    CONFIG_OUT=$(kubectl exec vault-0 -n vault -- sh -c 'vault write auth/kubernetes/config \
+        token_reviewer_jwt="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)" \
+        kubernetes_host="https://$KUBERNETES_SERVICE_HOST:$KUBERNETES_SERVICE_PORT_HTTPS" \
+        kubernetes_ca_cert=@/var/run/secrets/kubernetes.io/serviceaccount/ca.crt' 2>&1) || {
+            log_warning "Vault Kubernetes auth config 失敗: $CONFIG_OUT"; return
+        }
+
+    # PKI 発行ポリシー（存在チェック）
+    if ! kubectl exec vault-0 -n vault -- vault policy read cert-manager-pki &>/dev/null; then
+        kubectl exec vault-0 -n vault -- sh -c 'cat <<POLICY | vault policy write cert-manager-pki -
+path "pki_int/sign/heracles" { capabilities = ["update"] }
+path "pki_int/issue/heracles" { capabilities = ["update"] }
+POLICY'
+        log_info "Vault policy cert-manager-pki 作成"
+    else
+        log_info "Vault policy cert-manager-pki は既に存在"
+    fi
+
+    # ロール（存在チェック）
+    if ! kubectl exec vault-0 -n vault -- vault read auth/kubernetes/role/cert-manager-pki &>/dev/null; then
+        kubectl exec vault-0 -n vault -- vault write auth/kubernetes/role/cert-manager-pki \
+            bound_service_account_names=cert-manager \
+            bound_service_account_namespaces=cert-manager \
+            policies=cert-manager-pki \
+            ttl=1h
+        log_info "Vault ロール cert-manager-pki 作成"
+    else
+        log_info "Vault ロール cert-manager-pki は既に存在"
+    fi
+
+    log_success "Vault cert-manager ロール/ポリシー構成完了 (Issuer は Kubernetes auth を利用)"
+}
+
 # Deployment verification ----------------------------------------------------
 verify_deployment() {
     log_step "デプロイメントを検証しています..."
@@ -353,6 +397,7 @@ main() {
     setup_argocd
     setup_gitops_repository
     setup_vault
+    configure_vault_cert_manager_role
     verify_deployment
     show_summary
 

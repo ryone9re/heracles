@@ -171,6 +171,33 @@ gitops/operators/services/
 - Formalize RBAC per AppProject (role bindings scoped by project)
 - Add health dashboards auto-provision (Grafana Operator values)
 
+### Vault PKI Issuer (Kubernetes Auth) 運用
+
+`vault-pki-issuer` は静的トークンではなく Kubernetes Auth ロール `cert-manager-pki` を介して Vault にアクセスする方式。これにより以下を実現:
+
+- リポジトリにトークン平文を保持しない (Git 上の漏洩リスク低減)
+- Token ローテーション不要 (ServiceAccount JWT を短期利用)
+- 最小権限 (pki_int/sign|issue のみ update 権限)
+
+Issuer マニフェスト抜粋 (`gitops/services/cert/vault-issuer.yaml`):
+```yaml
+spec:
+   vault:
+      server: http://vault.vault:8200
+      path: pki_int/sign/heracles
+      auth:
+         kubernetes:
+            role: cert-manager-pki
+```
+
+`deploy-oke.sh` 内の `configure_vault_cert_manager_role()` が以下を自動化:
+1. `auth/kubernetes/config` (APIエンドポイント / CA / reviewer JWT)
+2. `cert-manager-pki` ポリシー作成
+3. `auth/kubernetes/role/cert-manager-pki` ロール作成 (SA: cert-manager, NS: cert-manager, ttl=1h)
+
+前提: Vault にて `pki_int` (中間CA) が初期化済みで、`heracles` ロールが適切な Key Usage / TTL 設定で存在すること。未設定なら証明書発行は失敗します。
+
+
 ### OCI 構築前段階手順
 
 1. Terraform `platform/environments/prod/terraform.tfvars` を作成
