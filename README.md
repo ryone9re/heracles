@@ -179,6 +179,50 @@ gitops/operators/services/
 3. （検証）`./deploy-oke.sh --dry-run` で計画ステップログ確認
 4. 問題なければ OCI 上で実行 (本ドキュメントは構築前で停止)
 
+### Terraform 変数と機密情報の扱い
+
+`terraform.tfvars` は公開リポジトリにコミットしない前提です。代わりに `terraform.tfvars.example` をテンプレートとしてコピーし、ローカルで値を補完してください。
+
+推奨パターン:
+
+1. ローカル開発
+   - `cp platform/environments/prod/terraform.tfvars.example platform/environments/prod/terraform.tfvars`
+   - 機密値 (OCID, fingerprint, private_key_path) を編集
+   - `.gitignore` で `terraform.tfvars` / `*.tfvars` を除外済み
+2. CI/CD (Terraform Cloud / GitHub Actions)
+   - 変数は環境変数 `TF_VAR_tenancy_ocid` などとして注入
+   - もしくは Terraform Cloud の Workspace Variables に設定
+3. Vault 連携 (将来)
+   - Vault Provider や `terraform login` + Remote Backend で長期保管を排除
+   - `private_key` を Vault の Transit 機能を使い署名のみで活用
+
+セキュリティ注意点:
+
+- `private_key_path` は権限 0600 を推奨 (`chmod 600 ~/.oci/oci_api_key.pem`)
+- `fingerprint` だけでは秘密鍵がないと悪用困難だが、関連付けられた User OCID と組み合わさると攻撃面情報になるため公開不要
+- Object Storage Namespace は公開しても大きなリスクはないが、他のテナントメタデータとの相関で識別され得るため慎重に扱う
+- Always Free 上限内: Arm(A1.Flex) 合計 4 OCPU / 24GB メモリ → 設定例では node_count=4 * (1 OCPU, 6GB) = 4 OCPU / 24GB で適合
+
+改善候補:
+- `node_image_id` をハードコードせず Data Source 取得 (`data "oci_core_images" ...`) で最新パッチを自動選択
+- `node_ocpus` / `node_memory_gb` を variables.tf に記述し default を Example と一致させる
+- Terraform Backend を OCI Object Storage に切替し `.terraform` ディレクトリを安全に共有 (State Locking は DynamoDB 互換が無いため慎重に運用)
+
+簡易バリデーション Checklist:
+
+| 項目 | OK 条件 |
+|------|----------|
+| tenancy_ocid | `ocid1.tenancy.oc1..` で始まる |
+| compartment_ocid | 利用対象 Compartment (専用 Subcompartment 推奨) |
+| user_ocid | Terraform 実行ユーザー (Dynamic Group + Instance Principals 検討可) |
+| fingerprint | OCI Console で表示されるキー Fingerprint と一致 |
+| private_key_path | ローカル実ファイル存在 & 権限 0600 |
+| region | 利用サービスが全て対応 (`ap-tokyo-1` OK) |
+| object_storage_namespace | `oci os ns get` の結果 |
+| A1.Flex ノード合計 | OCPU <= 4 / メモリ <= 24GB |
+
+問題なければそのまま Example を流用して `terraform.tfvars` に実値を記入してください。
+
 ### 環境変数
 `OCI_COMPARTMENT_OCID`, `GITHUB_TOKEN`(private repo), `SHOW_CREDENTIALS`(true=print secrets), `CF_API_TOKEN`(Cloudflare DNS), `KNATIVE_DOMAIN`(override domain)
 
