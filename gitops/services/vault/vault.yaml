@@ -19,9 +19,9 @@ spec:
         
         server:
           image:
-            # Use official HashiCorp repository; previous 'vault:1.15.2' caused ImagePullBackOff
+            # Use official HashiCorp repository and latest stable tag
             repository: hashicorp/vault
-            tag: 1.15.1
+            tag: 1.15.2
           
           standalone:
             enabled: false
