@@ -6,7 +6,7 @@ metadata:
     heracles.dev/component: cert-manager
 spec:
   acme:
-    email: ryone9re@gmail.com
+    email: devops@ryone.dev
     server: https://acme-v02.api.letsencrypt.org/directory
     privateKeySecretRef:
       name: letsencrypt-cloudflare

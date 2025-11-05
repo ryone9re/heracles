@@ -6,7 +6,7 @@ metadata:
     argocd.argoproj.io/sync-wave: "15"
 spec:
   acme:
-    email: ryone9re@gmail.com
+    email: devops@ryone.dev
     server: https://acme-v02.api.letsencrypt.org/directory
     privateKeySecretRef:
       name: letsencrypt-prod
@@ -28,7 +28,7 @@ metadata:
     argocd.argoproj.io/sync-wave: "15"
 spec:
   acme:
-    email: ryone9re@gmail.com
+    email: devops@ryone.dev
     server: https://acme-staging-v02.api.letsencrypt.org/directory
     privateKeySecretRef:
       name: letsencrypt-staging

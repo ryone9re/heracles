@@ -4,8 +4,6 @@
 
 ## 前提条件 (Prerequisites)
 
-# Cloudflare + Knative Domain Setup
-
 This guide explains how to expose Knative services at `<service>.<namespace>.apps.heracles.ryone.dev` using Cloudflare-managed DNS.
 
 ## 前提条件 (Prerequisites)
