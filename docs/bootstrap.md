@@ -106,7 +106,7 @@ kubectl port-forward -n harbor svc/harbor-core 8080:80
 
 ### ステップ3: Cloudflare ドメイン設定 (任意)
 
-Cloudflare DNS + ExternalDNS + cert-manager による `{{service}}.{{namespace}}.ryone.dev` / `apps.heracles.ryone.dev` 発行:
+Cloudflare DNS + ExternalDNS + cert-manager による `{{service}}.{{namespace}}.heracles.ryone.dev` / `apps.heracles.ryone.dev` 発行:
 1. `external-dns` Secret 作成: `kubectl create secret generic cloudflare-api-token -n external-dns --from-literal=api-token="$CF_API_TOKEN"`
 2. 必要なら DNS-01 ClusterIssuer 追加（`docs/domain-setup.md` 参照）
 3. Knative `config-domain` ConfigMap を確認/編集（`gitops/services/knative/config-domain.yaml`）

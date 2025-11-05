@@ -18,7 +18,7 @@ spec:
   config:
     network:
       ingress-class: kourier.ingress.networking.knative.dev
-      domain-template: "{{.Name}}.{{.Namespace}}.ryone.dev"
+      domain-template: "{{.Name}}.{{.Namespace}}.heracles.ryone.dev"
       external-domain-tls: "Enabled"
       certificate-class: cert-manager.certificate.networking.knative.dev
     

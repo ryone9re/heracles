@@ -1,30 +1,29 @@
 # heracles
 
-ryone's lab.
+ryone のラボ環境 / コンテナオーケストレーション基盤。
 
-## Configuration Overview
+## 構成概要 (ディレクトリ)
 
 ```plaintext
-platform/                 Terraform IaC (OCI networking, OKE, ArgoCD Helm)
-   environments/prod/      Production env Terraform
-      main.tf               Namespaces + ArgoCD Helm Release
-      oci-infrastructure.tf VCN / Subnets / Cluster / Node Pool
-      providers.tf          Providers (oci, k8s, helm)
-      variables.tf          Input variables
+platform/                 Terraform IaC (OCI ネットワーク / OKE / ArgoCD Helm)
+  environments/prod/      本番相当環境用 Terraform 定義
+    main.tf               Namespace作成 + ArgoCD Helm Release
+    oci-infrastructure.tf VCN / サブネット / クラスター / ノードプール
+    providers.tf          プロバイダ (oci, kubernetes, helm)
+    variables.tf          変数定義
 
-gitops/                   GitOps root (App-of-Apps enabled)
-   kustomization.yaml      Aggregates argocd/, observability/, rollouts/, secrets/, services/
-   argocd/                 ArgoCD applications (bootstrap + component apps)
-   observability/          Prometheus / Grafana / Loki / Tempo / OTel
-   rollouts/               Argo Rollouts templates & policies
-   secrets/                Vault & External Secrets configuration
-   services/               Ingress, cert-manager, ExternalDNS, Cilium, Knative, Harbor, DB operators
+gitops/                   GitOps ルート (App-of-Apps パターン)
+  kustomization.yaml      argocd/, observability/, rollouts/, secrets/, services/ を集約
+  argocd/                 ArgoCD Application 群 (bootstrap + コンポーネント)
+  observability/          Prometheus / Grafana / Loki / Tempo / OTel 設定
+  rollouts/               Argo Rollouts テンプレート & ポリシー
+  secrets/                Vault / External Secrets 関連
+  services/               Ingress, cert-manager, ExternalDNS, Cilium, Knative, Harbor, DB オペレータなど
 
-apps/                     Workload/Knative service repositories (to be added)
-   sample-service/         Example skeleton (base + overlays)
+apps/                     ワークロード / Knative サービス用（今後追加）
 ```
 
-### GitOps Flow (ArgoCD)
+### GitOps フロー (ArgoCD)
 
 1. Terraform applies ArgoCD Helm Release (provisions ArgoCD controllers only).
 2. `deploy-oke.sh` bootstraps the root App-of-Apps (`gitops/argocd/app-of-apps.yaml`).
@@ -34,9 +33,9 @@ apps/                     Workload/Knative service repositories (to be added)
 6. ApplicationSet continuously discovers `apps/*/prod` workload folders (project: workloads) and auto-creates Application CRs.
 7. Progressive delivery (Argo Rollouts) applied after core ingress/cert and metrics stacks are healthy.
 
-Result: All cluster components (except ephemeral Knative Services) are fully GitOps-managed; manual kubectl apply is limited to initial bootstrap.
+結果: （短命な Knative Service を除き）全クラスタコンポーネントは GitOps 管理下。手動 `kubectl apply` は初期ブートストラップに限定。
 
-#### AppProjects Segmentation
+#### AppProjects 区分
 
 | Project        | Scope / Components | Namespace policy |
 |----------------|--------------------|------------------|
@@ -46,9 +45,9 @@ Result: All cluster components (except ephemeral Knative Services) are fully Git
 | data           | postgres, redis, minio, scylladb operators & clusters | any |
 | workloads      | application workloads discovered via ApplicationSet under `apps/*` | apps |
 
-Rationale: Clear RBAC & lifecycle boundaries (e.g., observability confined to its namespace) + simplified per-domain access control.
+理由: RBAC とライフサイクル境界を明確化（例: 観測系は専用 namespace に閉じ込める）し、ドメイン別権限管理を簡素化。
 
-#### Sync-Wave Ordering (argocd.argoproj.io/sync-wave)
+#### Sync-Wave 順序 (argocd.argoproj.io/sync-wave)
 
 | Wave | Components | Reason |
 |------|------------|--------|
@@ -65,12 +64,12 @@ Rationale: Clear RBAC & lifecycle boundaries (e.g., observability confined to it
 | 50   | rollouts controller | Needs metrics endpoints for analysis templates |
 | 60   | workloads (apps/*) | Deployed after platform and observability ready |
 
-Note: Actual wave numbers are adjustable; ensure monotonic ordering. Lower waves reconcile first.
+注: Wave 数値は調整可能。小さい値から同期が進行する単調順序を担保。
 
-#### TLS & DNS Strategy
-Dual-solver ClusterIssuers use both HTTP-01 (ingress) and DNS-01 (Cloudflare) for resilience; wildcard certificate covers `*.ryone.dev` to accelerate Knative route provisioning. Vault PKI Issuer handles internal mTLS for future service mesh/SPIFEE integration.
+#### TLS & DNS 戦略
+ClusterIssuer は HTTP-01 (Ingress) と DNS-01 (Cloudflare) のデュアルソルバで冗長化。Wildcard 証明書 (`*.heracles.ryone.dev`) により Knative ルート確立を高速化。Vault PKI Issuer は将来的なサービスメッシュ / SPIFFE mTLS を見据えた内部証明書発行を提供。
 
-### Observability Stack
+### 観測スタック (Observability)
 
 | Type        | Collection/Processing | Visualization |
 |-------------|-----------------------|---------------|
@@ -79,7 +78,7 @@ Dual-solver ClusterIssuers use both HTTP-01 (ingress) and DNS-01 (Cloudflare) fo
 | Traces      | Tempo                 | Grafana       |
 | Alerts      | Prometheus Alertmanager | Grafana    |
 
-All telemetry ingested via OpenTelemetry Collector; dashboards & alert rules managed as code.
+メトリクス/ログ/トレースは OpenTelemetry Collector で収集。ダッシュボードとアラートルールは GitOps によりコード管理。
 
 ```plaintext
 gitops/observability/
@@ -93,7 +92,7 @@ gitops/observability/
     └── dashboards/     ← GrafanaDashboard CRs, AlertRule CRs
 ```
 
-### Services
+### サービス構成
 
 ```plaintext
 gitops/operators/services/
@@ -109,7 +108,7 @@ gitops/operators/services/
 └── minio/         ← ⑩ MinIO Operator
 ```
 
-#### ✅ 導入順序 (依存関係反映)
+#### ✅ 導入順序 (依存関係考慮)
 
 1. Ingress Controller
    - 外部トラフィックの入口として最初に導入
@@ -120,7 +119,7 @@ gitops/operators/services/
    - IngressやKnativeとの連携の前提として先行導入されるべき
 
 3. ExternalDNS
-   - 指定ドメイン（例：`app.ryone.dev`）へ Let’s Encryptやヘルスチェック自動付与のために必須cert-managerとの連携が前提
+   - 指定ドメイン（例：`app.heracles.ryone.dev`）へ Let’s Encryptやヘルスチェック自動付与のために必須cert-managerとの連携が前提
 
 4. Cilium
    - ネットワーク可視化やポリシー制御のため、Ingressとの連携（NetworkPolicy 対応）を踏まえ早期に導入
@@ -223,20 +222,20 @@ gitops/operators/services/
 
 問題なければそのまま Example を流用して `terraform.tfvars` に実値を記入してください。
 
-### 環境変数
+### 環境変数一覧
 `OCI_COMPARTMENT_OCID`, `GITHUB_TOKEN`(private repo), `SHOW_CREDENTIALS`(true=print secrets), `CF_API_TOKEN`(Cloudflare DNS), `KNATIVE_DOMAIN`(override domain)
 
-### トラブルシュート Quick Tips
+### トラブルシュート クイックヒント
 - ArgoCD apps missing: check `gitops/kustomization.yaml` & repo access
 - Vault errors: verify `vault status` (Initialized=true?)
 - No metrics: ensure ServiceMonitor namespaces match (`observability`)
 - DNS not updating: validate ExternalDNS secret `cloudflare-api-token` & `domainFilters`
 - Knative host mismatch: confirm `domain-template` & desired subdomain pattern
 
-### Cloudflare + Knative Domain Strategy
+### Cloudflare + Knative ドメイン戦略
 
-ExternalDNS (Cloudflare provider) manages A/AAAA & TXT records for Ingress/Service.
-Knative domain template set to `{{.Name}}.{{.Namespace}}.ryone.dev`. For app isolation under `apps.heracles.ryone.dev`, adjust to `{{.Name}}.{{.Namespace}}.apps.heracles.ryone.dev` and add a wildcard TLS certificate:
+ExternalDNS (Cloudflare) が Ingress/Service の A/AAAA/TXT レコードを自動管理。
+Knative の domain-template は `{{.Name}}.{{.Namespace}}.heracles.ryone.dev`。もしアプリ分離サブドメイン `apps.heracles.ryone.dev` 下に集約したい場合は `{{.Name}}.{{.Namespace}}.apps.heracles.ryone.dev` へ変更し wildcard TLS を追加。
 
 1. Create/update `ClusterIssuer` with DNS-01 solver (Cloudflare) if HTTP-01 not feasible.
 2. Provide `CF_API_TOKEN` secret (`cloudflare-api-token`) in `external-dns` namespace.
@@ -244,7 +243,7 @@ Knative domain template set to `{{.Name}}.{{.Namespace}}.ryone.dev`. For app iso
 4. Deploy a sample Knative Service (`apps/sample-service`).
 5. Verify: `kubectl get ksvc -A` & DNS entry presence in Cloudflare.
 
-### Fast Knative App Scaffold
+### Knative アプリ高速スキャフォールド
 
 ```bash
 mkdir -p apps/echo/base
@@ -264,14 +263,14 @@ spec:
 YAML
 ```
 
-Add an ArgoCD ApplicationSet rule later to auto-sync new services.
+後から ApplicationSet ルールを追加し、新規サービスを自動同期可能。
 
-Or use helper script:
+またはヘルパースクリプト使用例:
 ```bash
 ./scripts/create-knative-service.sh echo ghcr.io/ryone9re/echo:latest
 git add apps/echo && git commit -m "feat: add echo knative service" && git push
 ```
-ArgoCD will auto-create the Application (thanks to `ApplicationSet`) and deploy to namespace `apps`.
+`ApplicationSet` により ArgoCD が Application を自動生成し `apps` 名前空間へデプロイ。
 
 ---
-このREADMEは最新改善を反映しています。詳細（Terraform backend 認証/自動アプリ検出）は今後拡張予定。
+本 README は最新改善を反映済み。Terraform Backend 認証や自動アプリ検出詳細は今後さらに拡張予定です。

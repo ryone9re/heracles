@@ -17,5 +17,5 @@ spec:
               name: cloudflare-api-token   # Must exist in cert-manager namespace
               key: api-token
   # Notes:
-  # 1. Create the secret: kubectl create secret generic cloudflare-api-token -n cert-manager --from-literal=api-token=$CF_API_TOKEN
+  # 1. Secret 作成例: kubectl create secret generic cloudflare-api-token -n cert-manager --from-literal=api-token=$CF_API_TOKEN
   # 2. Use annotation: cert-manager.io/cluster-issuer: letsencrypt-cloudflare on Ingress / Certificate resources.

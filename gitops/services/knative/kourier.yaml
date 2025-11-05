@@ -45,10 +45,10 @@ spec:
   ingressClassName: nginx
   tls:
     - hosts:
-        - "*.ryone.dev"
+        - "*.heracles.ryone.dev"
       secretName: knative-wildcard-tls
   rules:
-    - host: "*.ryone.dev"
+    - host: "*.heracles.ryone.dev"
       http:
         paths:
           - path: /
