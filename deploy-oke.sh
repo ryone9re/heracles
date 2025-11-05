@@ -12,7 +12,7 @@ source "$(dirname "$0")/scripts/lib/logging.sh" 2>/dev/null || source "scripts/l
 OKE_CLUSTER_NAME="heracles-oke-cluster"
 OKE_NODE_POOL_NAME="heracles-node-pool"
 COMPARTMENT_OCID="${OCI_COMPARTMENT_OCID:-}"
-# Removed unused VCNOCE_SUBNET_OCID variable
+# Removed unused VCN_SUBNET_OCID variable
 KUBERNETES_VERSION="v1.28.2"
 NODE_SHAPE="VM.Standard.A1.Flex"  # Always Free eligible (Ampere ARM)
 NODE_SHAPE_CONFIG='{
