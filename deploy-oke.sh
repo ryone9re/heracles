@@ -221,7 +221,13 @@ setup_vault() {
         kubectl exec vault-0 -n vault -- vault operator unseal "${VAULT_UNSEAL_KEYS[$i]}"
     done
 
-    kubectl exec vault-0 -n vault -- vault auth enable kubernetes || log_warning "kubernetes auth enable failed"
+    VAULT_AUTH_ENABLE_OUTPUT=$(kubectl exec vault-0 -n vault -- vault auth enable kubernetes 2>&1) || {
+        if echo "$VAULT_AUTH_ENABLE_OUTPUT" | grep -qi "path is already enabled"; then
+            log_info "Vault Kubernetes auth method is already enabled"
+        else
+            log_warning "kubernetes auth enable failed: $VAULT_AUTH_ENABLE_OUTPUT"
+        fi
+    }
 
     mkdir -p ~/.heracles
     cat > ~/.heracles/vault-keys.json << EOF
