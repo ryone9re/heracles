@@ -6,7 +6,7 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: default
+  project: data
   source:
     repoURL: https://operator.min.io/
     chart: operator

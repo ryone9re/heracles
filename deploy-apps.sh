@@ -3,43 +3,12 @@
 # Heracles Kubernetes Applications Deployment Script
 # OKE構築後のアプリケーション展開用スクリプト
 
-set -e
+set -euo pipefail
 
-# カラー出力設定
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-PURPLE='\033[0;35m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+# 共通ログユーティリティ読込
+source "$(dirname "$0")/scripts/lib/logging.sh" 2>/dev/null || source "scripts/lib/logging.sh"
 
-# ログ関数
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1"
-}
-
-log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1"
-}
-
-log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1"
-}
-
-log_step() {
-    echo -e "${PURPLE}[STEP]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1"
-}
-
-log_deploy() {
-    echo -e "${CYAN}[DEPLOY]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1"
-}
-
-# 設定
+# 設定（タイムアウト・主要名前空間）
 TIMEOUT_SECONDS=600
 ARGOCD_NAMESPACE="argocd"
 VAULT_NAMESPACE="vault"
@@ -49,19 +18,19 @@ MONITORING_NAMESPACE="observability"
 check_prerequisites() {
     log_step "前提条件をチェックしています..."
     
-    # kubectl接続確認
+    # Cluster reachable?
     if ! kubectl cluster-info &>/dev/null; then
         log_error "Kubernetesクラスターに接続できません"
         exit 1
     fi
     
-    # ArgoCD存在確認
+    # ArgoCD namespace prerequisite
     if ! kubectl get namespace "$ARGOCD_NAMESPACE" &>/dev/null; then
         log_error "ArgoCD名前空間が存在しません。先にbootstrap-oke.shを実行してください"
         exit 1
     fi
     
-    # Helm確認
+    # Helm installed?
     if ! command -v helm &> /dev/null; then
         log_error "Helm が見つかりません"
         exit 1
@@ -70,7 +39,7 @@ check_prerequisites() {
     log_success "前提条件チェック完了"
 }
 
-# リソース待機関数
+# Wait helpers ---------------------------------------------------------------
 wait_for_deployment() {
     local namespace=$1
     local deployment=$2
@@ -101,11 +70,11 @@ wait_for_pods() {
     fi
 }
 
-# ArgoCD Applications の同期
+# Sync ArgoCD Applications ---------------------------------------------------
 sync_argocd_applications() {
     log_step "ArgoCD Applications を同期しています..."
     
-    # ArgoCD CLIインストール確認
+    # Ensure ArgoCD CLI present
     if ! command -v argocd &> /dev/null; then
         log_info "ArgoCD CLIをインストールしています..."
         curl -sSL -o argocd-linux-amd64 https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
@@ -113,7 +82,7 @@ sync_argocd_applications() {
         rm argocd-linux-amd64
     fi
     
-    # ArgoCD パスワード取得
+    # Fetch ArgoCD initial admin password
     local argocd_password
     argocd_password=$(kubectl -n "$ARGOCD_NAMESPACE" get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d 2>/dev/null || echo "")
     
@@ -122,29 +91,27 @@ sync_argocd_applications() {
         return 1
     fi
     
-    # ポートフォワード開始
+    # Start port-forward for API access
     kubectl port-forward svc/argocd-server -n "$ARGOCD_NAMESPACE" 8080:443 &
     local port_forward_pid=$!
+    # Ensure port-forward cleaned up on any exit
+    trap 'kill ${port_forward_pid} 2>/dev/null || true' EXIT
     sleep 5
     
-    # ArgoCD ログイン
+    # Login (insecure flag due to self-signed; TLS termination via ingress later)
     argocd login localhost:8080 --username admin --password "$argocd_password" --insecure
     
-    # 全アプリケーションの同期
+    # Sync selected applications (explicit list for clarity)
     log_deploy "ArgoCD Applications を同期中..."
     
     # 基本的なアプリケーション同期順序
+    # Align with actual Application manifests present in gitops/argocd/
+    # If app-of-apps is retained (with root kustomization) it can aggregate; we still sync individual apps for status visibility.
     local apps=(
-        "bootstrap"
-        "core-services"
-        "ingress-nginx" 
-        "cert-manager"
-        "vault"
-        "external-secrets"
-        "monitoring-stack"
-        "database-operators"
-        "harbor"
-        "knative"
+        "argocd-bootstrap"
+        "observability-stack"
+        "secrets-management"
+        "infrastructure-services"
     )
     
     for app in "${apps[@]}"; do
@@ -156,7 +123,7 @@ sync_argocd_applications() {
         fi
     done
     
-    # 全アプリケーション状態確認
+    # Show application states
     argocd app list
     
     # ポートフォワード終了
@@ -165,7 +132,7 @@ sync_argocd_applications() {
     log_success "ArgoCD Applications 同期完了"
 }
 
-# コアサービスの展開待機
+# Core services readiness ----------------------------------------------------
 wait_for_core_services() {
     log_step "コアサービスの準備を待機しています..."
     
@@ -182,7 +149,7 @@ wait_for_core_services() {
     log_success "コアサービス準備完了"
 }
 
-# Vault設定の完了
+# Vault integration (post bootstrap) ----------------------------------------
 complete_vault_setup() {
     log_step "Vault設定を完了しています..."
     
@@ -192,16 +159,22 @@ complete_vault_setup() {
     # Vaultキーファイル確認
     if [[ -f ~/.heracles/vault-keys.json ]]; then
         log_info "Vaultキーファイルが存在します"
-        
-        # Vaultトークンを環境変数に設定
+
         VAULT_ROOT_TOKEN=$(jq -r '.root_token' ~/.heracles/vault-keys.json)
         export VAULT_ROOT_TOKEN
-        
-        # Kubernetes認証の詳細設定
+
+        # ServiceAccountトークン取得（新方式）
+        local reviewer_jwt
+        reviewer_jwt=$(kubectl create token vault -n "$VAULT_NAMESPACE" 2>/dev/null || true)
+        if [[ -z "$reviewer_jwt" ]]; then
+            log_warning "Bound SA tokenの取得に失敗。旧方式にフォールバックします"
+            reviewer_jwt="$(kubectl get secret --output=jsonpath='{.data.token}' $(kubectl get serviceaccount vault -n "$VAULT_NAMESPACE" -o jsonpath='{.secrets[0].name}') -n "$VAULT_NAMESPACE" | base64 -d 2>/dev/null || true)"
+        fi
+
         kubectl exec vault-0 -n "$VAULT_NAMESPACE" -- vault write auth/kubernetes/config \
-            token_reviewer_jwt="$(kubectl get secret --output=jsonpath='{.data.token}' $(kubectl get serviceaccount vault -n "$VAULT_NAMESPACE" -o jsonpath='{.secrets[0].name}') -n "$VAULT_NAMESPACE" | base64 -d)" \
+            token_reviewer_jwt="$reviewer_jwt" \
             kubernetes_host="https://kubernetes.default.svc:443" \
-            kubernetes_ca_cert=@/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+            kubernetes_ca_cert=@/var/run/secrets/kubernetes.io/serviceaccount/ca.crt || log_warning "Vault k8s auth config 書き込み失敗"
         
         # External Secrets Operator用のポリシー作成
         kubectl exec vault-0 -n "$VAULT_NAMESPACE" -- vault policy write external-secrets - <<EOF
@@ -215,7 +188,7 @@ EOF
             bound_service_account_names=external-secrets \
             bound_service_account_namespaces=external-secrets \
             policies=external-secrets \
-            ttl=1h
+            ttl=1h || log_warning "Vault role external-secrets 作成失敗"
         
         log_success "Vault設定完了"
     else
@@ -223,28 +196,17 @@ EOF
     fi
 }
 
-# 監視スタックの展開
+# Observability stack readiness ---------------------------------------------
 deploy_monitoring_stack() {
-    log_step "監視スタックを展開しています..."
-    
-    # Prometheus Operator CRDs の事前インストール
-    log_deploy "Prometheus Operator CRDs をインストール中..."
-    kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_servicemonitors.yaml
-    kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_prometheusrules.yaml
-    kubectl apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/main/example/prometheus-operator-crd/monitoring.coreos.com_podmonitors.yaml
-    
-    # 監視名前空間の作成
-    kubectl create namespace "$MONITORING_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
-    
-    # Prometheus Stack の準備待機
-    log_deploy "Prometheus Stack の準備を待機中..."
-    wait_for_deployment "$MONITORING_NAMESPACE" "prometheus-kube-prometheus-prometheus-operator" 300
-    wait_for_deployment "$MONITORING_NAMESPACE" "prometheus-grafana" 300
-    
-    log_success "監視スタック展開完了"
+    log_step "監視スタックの状態を確認しています (ArgoCD管理) ..."
+    # 既に ArgoCD が namespace を作成するため、ここでの手動作成は行わない
+    # readiness のみを確認
+    wait_for_deployment "$MONITORING_NAMESPACE" "prometheus-operator" 300 || log_warning "Prometheus Operator deployment name not found (同期中か別名)"
+    wait_for_deployment "$MONITORING_NAMESPACE" "prometheus-grafana" 300 || log_warning "Grafana deployment name not found (同期中)"
+    log_success "監視スタック状態確認完了"
 }
 
-# データベースオペレーターの展開
+# Database operators readiness ----------------------------------------------
 deploy_database_operators() {
     log_step "データベースオペレーターを展開しています..."
     
@@ -263,7 +225,7 @@ deploy_database_operators() {
     log_success "データベースオペレーター展開完了"
 }
 
-# Harbor コンテナレジストリの展開
+# Harbor readiness -----------------------------------------------------------
 deploy_harbor() {
     log_step "Harbor コンテナレジストリを展開しています..."
     
@@ -284,7 +246,7 @@ deploy_harbor() {
     fi
 }
 
-# Knativeサーバーレスプラットフォームの展開
+# Knative platform readiness -------------------------------------------------
 deploy_knative() {
     log_step "Knativeサーバーレスプラットフォームを展開しています..."
     
@@ -301,7 +263,7 @@ deploy_knative() {
     log_success "Knativeサーバーレスプラットフォーム展開完了"
 }
 
-# 全体の検証
+# Global verification summary ------------------------------------------------
 verify_all_deployments() {
     log_step "全体のデプロイメントを検証しています..."
     
@@ -338,7 +300,7 @@ verify_all_deployments() {
     log_success "デプロイメント検証完了"
 }
 
-# アクセス情報の表示
+# Access info (optional secret output) --------------------------------------
 show_access_info() {
     log_step "アクセス情報を表示しています..."
     
@@ -354,50 +316,54 @@ show_access_info() {
     local harbor_password
     harbor_password=$(kubectl get secret -n harbor harbor-core-secret -o jsonpath='{.data.HARBOR_ADMIN_PASSWORD}' | base64 -d 2>/dev/null || echo "取得失敗")
     
-    cat << EOF
+            if [[ "${SHOW_CREDENTIALS:-false}" == "true" ]]; then
+                    cat << EOF
 
-🎉 ========================================
-   Heracles アプリケーション展開完了！
-========================================
+    🎉 ========================================
+         Heracles アプリケーション展開完了！
+    ========================================
 
-🔐 アクセス情報:
-   ArgoCD:
-     - URL: kubectl port-forward svc/argocd-server -n argocd 8080:443
-     - User: admin
-     - Pass: $argocd_password
+    🔐 アクセス情報:
+         ArgoCD:
+             - PortForward: kubectl port-forward svc/argocd-server -n argocd 8080:443
+             - User: admin
+             - Pass: $argocd_password
    
-   Grafana:
-     - URL: kubectl port-forward -n observability svc/prometheus-grafana 3000:80
-     - User: admin
-     - Pass: $grafana_password
+         Grafana:
+             - PortForward: kubectl port-forward -n observability svc/prometheus-grafana 3000:80
+             - User: admin
+             - Pass: $grafana_password
    
-   Harbor:
-     - URL: kubectl port-forward -n harbor svc/harbor-core 8080:80
-     - User: admin
-     - Pass: $harbor_password
+         Harbor:
+             - PortForward: kubectl port-forward -n harbor svc/harbor-core 8080:80
+             - User: admin
+             - Pass: $harbor_password
    
-   Vault:
-     - URL: kubectl port-forward -n vault svc/vault 8200:8200
-     - Keys: ~/.heracles/vault-keys.json
+         Vault:
+             - PortForward: kubectl port-forward -n vault svc/vault 8200:8200
+             - Keys: ~/.heracles/vault-keys.json
 
-🛠️  便利コマンド:
-   kubectl get pods --all-namespaces
-   kubectl get applications -n argocd
-   kubectl logs -f deployment/argocd-server -n argocd
+    🛠️  便利コマンド:
+         kubectl get pods --all-namespaces
+         kubectl get applications -n argocd
+         kubectl logs -f deployment/argocd-server -n argocd
 
-📋 次のステップ:
-   1. ArgoCD UIで全アプリケーションの同期確認
-   2. Grafana UIで監視ダッシュボード確認
-   3. Harbor UIでコンテナレジストリ確認
-   4. 各アプリケーションのカスタマイズ
+    📋 次のステップ:
+         1. ArgoCD UIで全アプリケーションの同期確認
+         2. Grafana UIで監視ダッシュボード確認
+         3. Harbor UIでコンテナレジストリ確認
+         4. 各アプリケーションのカスタマイズ
 
-🚀 デプロイメント成功！
-EOF
+    🚀 デプロイメント成功！
+    EOF
+            else
+                    log_info "SHOW_CREDENTIALS=false のためアクセス情報出力を省略しました"
+            fi
     
     log_success "アプリケーション展開が完了しました！"
 }
 
-# エラーハンドリング
+# Error handler --------------------------------------------------------------
 handle_error() {
     log_error "アプリケーション展開中にエラーが発生しました"
     log_info "デバッグ情報:"
@@ -411,7 +377,7 @@ handle_error() {
     exit 1
 }
 
-# メイン実行部分
+# Main orchestration ---------------------------------------------------------
 main() {
     log_info "=== Heracles アプリケーション展開開始 ==="
     log_info "タイムスタンプ: $(date)"
@@ -434,7 +400,7 @@ main() {
     log_success "=== Heracles アプリケーション展開完了 ==="
 }
 
-# ヘルプ表示
+# Help text ------------------------------------------------------------------
 show_help() {
     cat << EOF
 Heracles Kubernetes Applications Deployment Script
@@ -446,7 +412,8 @@ Heracles Kubernetes Applications Deployment Script
   --help                このヘルプを表示
   --sync-only          ArgoCD Applications の同期のみ実行
   --verify-only        デプロイメントの検証のみ実行
-  --timeout SECONDS    タイムアウト時間を設定（デフォルト: 600秒）
+    --timeout SECONDS    タイムアウト時間を設定（デフォルト: 600秒）
+    --show-credentials   アクセス情報（パスワード等）を表示
 
 前提条件:
   - OKEクラスターが構築済み（bootstrap-oke.sh実行済み）
@@ -478,6 +445,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --verify-only)
             VERIFY_ONLY=true
+            shift
+            ;;
+        --show-credentials)
+            export SHOW_CREDENTIALS=true
             shift
             ;;
         --timeout)

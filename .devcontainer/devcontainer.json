@@ -1,6 +1,6 @@
 {
-	"name": "Node.js",
-	"image": "mcr.microsoft.com/devcontainers/javascript-node:1-22-bookworm",
+	"name": "Ubuntu",
+	"image": "mcr.microsoft.com/devcontainers/base:noble",
 	"customizations": {
 		"vscode": {
 			"extensions": [
@@ -10,18 +10,8 @@
 		}
 	},
 	"features": {
-		"./features/claude-code": {},
-		"ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {
-			"version": "latest",
-			"helm": "latest",
-			"minikube": "latest"
-		},
-		"ghcr.io/devcontainers/features/docker-in-docker:2": {
-			"version": "latest",
-			"dockerDashComposeVersion": "v2"
-		},
-		"ghcr.io/devcontainers-extra/features/terraform-asdf:2": {
-			"version": "latest"
-		}
+		"ghcr.io/devcontainers/features/docker-in-docker:2": {},
+		"ghcr.io/devcontainers-extra/features/kind:1": {},
+		"ghcr.io/devcontainers-extra/features/terraform-asdf:2": {}
 	}
 }

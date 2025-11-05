@@ -6,3 +6,4 @@ resources:
   - knative-eventing.yaml
   - kourier.yaml
   - knative-monitoring.yaml
+  - config-domain.yaml

@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: config-domain
+  namespace: knative-serving
+  labels:
+    app.kubernetes.io/name: knative-serving
+    heracles.dev/component: knative-domain
+# Map domain suffixes to empty values enabling dynamic host generation.
+# Adjust to apps.heracles.ryone.dev for segregated app subdomain if desired.
+# To switch later, patch this configmap or override via KnativeServing spec.
+data:
+  ryone.dev: ""              # default pattern service.namespace.ryone.dev
+  apps.heracles.ryone.dev: "" # alternate app-specific hierarchy (future use)

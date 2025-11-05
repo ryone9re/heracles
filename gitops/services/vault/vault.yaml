@@ -6,7 +6,7 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: default
+  project: platform
   source:
     repoURL: https://helm.releases.hashicorp.com
     chart: vault
@@ -19,8 +19,9 @@ spec:
         
         server:
           image:
-            repository: vault
-            tag: 1.15.2
+            # Use official HashiCorp repository; previous 'vault:1.15.2' caused ImagePullBackOff
+            repository: hashicorp/vault
+            tag: 1.15.1
           
           standalone:
             enabled: false

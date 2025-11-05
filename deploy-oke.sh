@@ -4,42 +4,15 @@
 # 完全な環境破壊からの復旧用スクリプト
 # ryone9re/heracles プロジェクト用
 
-set -e
+set -euo pipefail
 
-# カラー出力設定
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-PURPLE='\033[0;35m'
-NC='\033[0m' # No Color
+source "$(dirname "$0")/scripts/lib/logging.sh" 2>/dev/null || source "scripts/lib/logging.sh"
 
-# ログ関数
-log_info() {
-    echo -e "${BLUE}[INFO]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1"
-}
-
-log_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1"
-}
-
-log_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1"
-}
-
-log_error() {
-    echo -e "${RED}[ERROR]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1"
-}
-
-log_step() {
-    echo -e "${PURPLE}[STEP]${NC} $(date '+%Y-%m-%d %H:%M:%S') - $1"
-}
-
-# 設定変数（無料枠対応）
+# Configuration (Always Free friendly) ---------------------------------------
 OKE_CLUSTER_NAME="heracles-oke-cluster"
 OKE_NODE_POOL_NAME="heracles-node-pool"
 COMPARTMENT_OCID="${OCI_COMPARTMENT_OCID:-}"
-VCNOCE_SUBNET_OCID="${OCI_SUBNET_OCID:-}"
+# Removed unused VCNOCE_SUBNET_OCID variable
 KUBERNETES_VERSION="v1.28.2"
 NODE_SHAPE="VM.Standard.A1.Flex"  # Always Free eligible (Ampere ARM)
 NODE_SHAPE_CONFIG='{
@@ -49,7 +22,7 @@ NODE_SHAPE_CONFIG='{
 NODE_COUNT=4  # 無料枠内（A1.Flex: 合計4 OCPU, 24GB RAM）+ コントロールプレーン（無料）
 NODE_IMAGE_TYPE="oci"
 
-# 前提条件チェック
+# Prerequisites --------------------------------------------------------------
 check_prerequisites() {
     log_step "前提条件をチェックしています..."
     
@@ -97,55 +70,48 @@ check_prerequisites() {
     log_success "前提条件チェック完了"
 }
 
-# OCI インフラストラクチャの作成（Terraform経由）
+# Terraform driven OCI infra provisioning -----------------------------------
 create_oci_infrastructure() {
     log_step "TerraformでOCIインフラストラクチャを作成しています..."
-    
-    # terraform.tfvars の存在確認
+
     if [[ ! -f "platform/environments/prod/terraform.tfvars" ]]; then
         log_error "terraform.tfvars ファイルが見つかりません"
         log_info "platform/environments/prod/terraform.tfvars.example をコピーして設定してください"
         exit 1
     fi
-    
+
     cd platform/environments/prod
-    
-    # Terraform初期化
     log_info "Terraform初期化中..."
     terraform init
-    
-    # Terraform実行計画
-    log_info "Terraform実行計画を作成中..."
-    terraform plan -target=oci_containerengine_cluster.heracles_oke_cluster -target=oci_containerengine_node_pool.heracles_node_pool -out=oci-plan
-    
-    # OCI インフラストラクチャのデプロイ
+
+    log_info "Terraform単一計画を作成中..."
+    terraform plan -out=oci-plan
+
     log_info "OCI インフラストラクチャをデプロイ中..."
-    terraform apply oci-plan
-    
-    # 出力値を取得
+    terraform apply -auto-approve oci-plan
+
     CLUSTER_OCID=$(terraform output -raw cluster_id)
     VCN_OCID=$(terraform output -raw vcn_id)
     WORKER_SUBNET_OCID=$(terraform output -raw worker_subnet_id)
     LB_SUBNET_OCID=$(terraform output -raw lb_subnet_id)
     API_SUBNET_OCID=$(terraform output -raw api_subnet_id)
-    
-    log_success "OCI インフラストラクチャ作成完了"
+
+    log_success "OCI インフラストラクチャ作成完了 (単一apply)"
     log_info "クラスターOCID: $CLUSTER_OCID"
-    
+
     export CLUSTER_OCID VCN_OCID WORKER_SUBNET_OCID LB_SUBNET_OCID API_SUBNET_OCID
-    
     cd - > /dev/null
 }
 
-# kubectl設定
+# kubeconfig setup ----------------------------------------------------------
 configure_kubectl() {
     log_step "kubectlを設定しています..."
-    
-    # OKEクラスター用のkubeconfigを取得
+
+    local region="${OCI_REGION:-${TF_VAR_region:-ap-tokyo-1}}"
     oci ce cluster create-kubeconfig \
         --cluster-id "$CLUSTER_OCID" \
         --file "$HOME/.kube/config" \
-        --region "$(oci iam region-subscription list --query 'data[0]."region-name"' --raw-output)" \
+        --region "$region" \
         --token-version "2.0.0" \
         --kube-endpoint PRIVATE_ENDPOINT
     
@@ -161,7 +127,7 @@ configure_kubectl() {
     kubectl get nodes
 }
 
-# Terraformによるインフラストラクチャプロビジョニング
+# Remaining infra provisioning (Helm releases etc.) -------------------------
 deploy_terraform_infrastructure() {
     log_step "Terraformでインフラストラクチャをプロビジョニングしています..."
     
@@ -179,7 +145,7 @@ deploy_terraform_infrastructure() {
     cd - > /dev/null
 }
 
-# ArgoCD初期設定
+# ArgoCD bootstrap ----------------------------------------------------------
 setup_argocd() {
     log_step "ArgoCDを設定しています..."
     
@@ -200,7 +166,7 @@ setup_argocd() {
     log_info "ArgoCD UI アクセス: kubectl port-forward svc/argocd-server -n argocd 8080:443"
 }
 
-# GitOpsリポジトリ設定
+# GitOps repository & app-of-apps -------------------------------------------
 setup_gitops_repository() {
     log_step "GitOpsリポジトリを設定しています..."
     
@@ -233,29 +199,30 @@ setup_gitops_repository() {
     log_success "GitOpsリポジトリ設定完了"
 }
 
-# Vault設定
+# Vault initialization (idempotent) -----------------------------------------
 setup_vault() {
     log_step "Vaultを設定しています..."
-    
-    # Vaultがデプロイされるまで待機
-    kubectl wait --for=condition=Ready pods -l app.kubernetes.io/name=vault -n vault --timeout=300s
-    
-    # Vault初期化
+
+    kubectl wait --for=condition=Ready pods -l app.kubernetes.io/name=vault -n vault --timeout=300s || {
+        log_warning "Vault Pod readiness timeout。初期化をスキップします"
+        return
+    }
+
+    if kubectl exec vault-0 -n vault -- vault status 2>/dev/null | grep -q "Initialized.*true"; then
+        log_info "Vaultは既に初期化済みのため処理をスキップ"
+        return
+    fi
+
     VAULT_INIT_OUTPUT=$(kubectl exec vault-0 -n vault -- vault operator init -key-shares=5 -key-threshold=3 -format=json)
-    
-    # キーとトークンを抽出
     VAULT_UNSEAL_KEYS=($(echo "$VAULT_INIT_OUTPUT" | jq -r '.unseal_keys_b64[]'))
     VAULT_ROOT_TOKEN=$(echo "$VAULT_INIT_OUTPUT" | jq -r '.root_token')
-    
-    # Vaultアンシール
-    kubectl exec vault-0 -n vault -- vault operator unseal "${VAULT_UNSEAL_KEYS[0]}"
-    kubectl exec vault-0 -n vault -- vault operator unseal "${VAULT_UNSEAL_KEYS[1]}"
-    kubectl exec vault-0 -n vault -- vault operator unseal "${VAULT_UNSEAL_KEYS[2]}"
-    
-    # 認証設定
-    kubectl exec vault-0 -n vault -- vault auth enable kubernetes
-    
-    # キーとトークンを安全に保存
+
+    for i in 0 1 2; do
+        kubectl exec vault-0 -n vault -- vault operator unseal "${VAULT_UNSEAL_KEYS[$i]}"
+    done
+
+    kubectl exec vault-0 -n vault -- vault auth enable kubernetes || log_warning "kubernetes auth enable failed"
+
     mkdir -p ~/.heracles
     cat > ~/.heracles/vault-keys.json << EOF
 {
@@ -275,7 +242,7 @@ EOF
     log_warning "Vaultキーとトークンは ~/.heracles/vault-keys.json に保存されました"
 }
 
-# デプロイメント検証
+# Deployment verification ----------------------------------------------------
 verify_deployment() {
     log_step "デプロイメントを検証しています..."
     
@@ -294,7 +261,7 @@ verify_deployment() {
     log_success "デプロイメント検証完了"
 }
 
-# サマリー表示
+# Summary output -------------------------------------------------------------
 show_summary() {
     log_step "デプロイメントサマリー"
     
@@ -307,7 +274,11 @@ show_summary() {
     echo "🎯 リソース合計: ${NODE_COUNT} OCPU, $((NODE_COUNT * 6))GB RAM（無料枠フル活用）"
     echo
     echo "🔐 アクセス情報:"
-    echo "  ArgoCD Admin: admin / $ARGOCD_PASSWORD"
+    if [[ "${SHOW_CREDENTIALS:-false}" == "true" ]]; then
+        echo "  ArgoCD Admin: admin / $ARGOCD_PASSWORD"
+    else
+        echo "  ArgoCD Admin: (hidden; export SHOW_CREDENTIALS=true)"
+    fi
     echo "  Vault Keys: ~/.heracles/vault-keys.json"
     echo
     echo "🛠️  便利コマンド:"
@@ -323,7 +294,7 @@ show_summary() {
     log_success "全ての構築プロセスが完了しました！"
 }
 
-# エラーハンドリング
+# Error handling / optional cleanup -----------------------------------------
 cleanup_on_error() {
     log_error "エラーが発生しました。クリーンアップを実行します..."
     
@@ -350,29 +321,39 @@ cleanup_on_error() {
     exit 1
 }
 
-# メイン実行部分
+# Main execution flow -------------------------------------------------------
 main() {
     log_info "=== Heracles OKE Bootstrap 開始 ==="
     log_info "タイムスタンプ: $(date)"
-    
-    # エラーハンドリング設定
+
     trap cleanup_on_error ERR
-    
-    # 実行ステップ
+
     check_prerequisites
-    create_oci_infrastructure
+
+    if [[ "${DRY_RUN:-false}" == "true" ]]; then
+        log_info "DRY RUN: create_oci_infrastructure skipped"
+    else
+        create_oci_infrastructure
+    fi
+
     configure_kubectl
-    deploy_terraform_infrastructure
+
+    if [[ "${DRY_RUN:-false}" == "true" ]]; then
+        log_info "DRY RUN: deploy_terraform_infrastructure skipped"
+    else
+        deploy_terraform_infrastructure
+    fi
+
     setup_argocd
     setup_gitops_repository
     setup_vault
     verify_deployment
     show_summary
-    
+
     log_success "=== Heracles OKE Bootstrap 完了 ==="
 }
 
-# ヘルプ表示
+# Help text ------------------------------------------------------------------
 show_help() {
     cat << EOF
 Heracles OKE Bootstrap Script
@@ -398,30 +379,20 @@ EOF
 }
 
 # コマンドライン引数処理
-case "${1:-}" in
-    --help|-h)
-        show_help
-        exit 0
-        ;;
-    --dry-run)
-        log_info "DRY RUN モードで実行します"
-        DRY_RUN=true
-        export DRY_RUN
-        ;;
-    --delete-on-error)
-        log_warning "DELETE_ON_ERROR モードが有効です"
-        DELETE_ON_ERROR=true
-        export DELETE_ON_ERROR
-        ;;
-    "")
-        # 引数なしの場合は通常実行
-        ;;
-    *)
-        log_error "不明なオプション: $1"
-        show_help
-        exit 1
-        ;;
-esac
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --help|-h)
+            show_help; exit 0 ;;
+        --dry-run)
+            DRY_RUN=true ;;
+        --delete-on-error)
+            DELETE_ON_ERROR=true ;;
+        --show-credentials)
+            SHOW_CREDENTIALS=true ;;
+        *)
+            log_error "不明なオプション: $1"; show_help; exit 1 ;;
+    esac
+    shift
+done
 
-# メイン処理実行
 main "$@"

@@ -1,0 +1,49 @@
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: vault-pki-issuer
+  namespace: cert-manager
+  labels:
+    heracles.dev/component: cert-manager
+spec:
+  vault:
+    server: http://vault.vault:8200
+    path: pki_int/sign/heracles
+    auth:
+      tokenSecretRef:
+        name: vault-root-token
+        key: token
+---
+# Secret expected to hold Vault token (create from ~/.heracles/vault-keys.json root_token or a limited policy token).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: vault-root-token
+  namespace: cert-manager
+  labels:
+    heracles.dev/component: cert-manager
+stringData:
+  token: REPLACE_ME_WITH_SAFE_TOKEN
+---
+# Optional Certificate example using Vault PKI (internal mTLS, short-lived certs)
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: internal-heracles-example
+  namespace: cert-manager
+spec:
+  secretName: internal-heracles-example-tls
+  issuerRef:
+    name: vault-pki-issuer
+    kind: Issuer
+  commonName: internal-heracles.heracles.local
+  dnsNames:
+    - internal-heracles.heracles.local
+  usages:
+    - server auth
+    - client auth
+  renewBefore: 720h
+  privateKey:
+    rotationPolicy: Always
+    algorithm: RSA
+    size: 2048

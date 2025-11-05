@@ -4,3 +4,6 @@ kind: Kustomization
 resources:
   - cert-manager.yaml
   - cluster-issuer.yaml
+  - cloudflare-dns-issuer.yaml
+  - vault-issuer.yaml
+  - wildcard-certificate.yaml

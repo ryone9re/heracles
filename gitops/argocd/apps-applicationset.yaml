@@ -1,0 +1,36 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: lab-workloads
+  namespace: argocd
+  labels:
+    heracles.dev/component: application-set
+spec:
+  generators:
+    - git:
+        repoURL: https://github.com/ryone9re/heracles
+        revision: HEAD
+        directories:
+          - path: apps/*/prod
+  template:
+    metadata:
+      name: '{{path.basename}}'
+      labels:
+        environment: prod
+        heracles.dev/app: '{{path.basename}}'
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/ryone9re/heracles
+        targetRevision: HEAD
+        path: apps/{{path.basename}}/prod
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: apps
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - PrunePropagationPolicy=foreground

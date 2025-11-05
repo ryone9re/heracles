@@ -1,6 +1,6 @@
 terraform {
   required_version = ">= 1.0"
-  
+
   backend "s3" {
     bucket                      = "heracles-terraform-state"
     key                         = "prod/terraform.tfstate"
@@ -11,7 +11,7 @@ terraform {
     skip_metadata_api_check     = true
     force_path_style            = true
   }
-  
+
   required_providers {
     oci = {
       source  = "oracle/oci"
@@ -154,19 +154,19 @@ resource "helm_release" "argocd" {
       global = {
         domain = "argocd.ryone.dev"
       }
-      
+
       configs = {
         params = {
           "server.insecure" = true
         }
         cm = {
-          "application.instanceLabelKey" = "argocd.argoproj.io/instance"
+          "application.instanceLabelKey"   = "argocd.argoproj.io/instance"
           "server.rbac.log.enforce.enable" = "true"
-          url = "https://argocd.ryone.dev"
+          url                              = "https://argocd.ryone.dev"
         }
         rbac = {
           "policy.default" = "role:readonly"
-          "policy.csv" = <<-EOT
+          "policy.csv"     = <<-EOT
             p, role:admin, applications, *, */*, allow
             p, role:admin, clusters, *, *, allow
             p, role:admin, repositories, *, *, allow
@@ -182,12 +182,12 @@ resource "helm_release" "argocd" {
 
       server = {
         ingress = {
-          enabled = true
+          enabled          = true
           ingressClassName = "nginx"
-          hostname = "argocd.ryone.dev"
+          hostname         = "argocd.ryone.dev"
           annotations = {
-            "cert-manager.io/cluster-issuer" = "letsencrypt-prod"
-            "nginx.ingress.kubernetes.io/ssl-redirect" = "true"
+            "cert-manager.io/cluster-issuer"               = "letsencrypt-prod"
+            "nginx.ingress.kubernetes.io/ssl-redirect"     = "true"
             "nginx.ingress.kubernetes.io/backend-protocol" = "GRPC"
           }
           tls = true
@@ -241,7 +241,8 @@ resource "helm_release" "argocd" {
   ]
 
   depends_on = [
-    kubernetes_namespace.argocd
+    kubernetes_namespace.argocd,
+    oci_containerengine_cluster.heracles_oke_cluster
   ]
 }
 
