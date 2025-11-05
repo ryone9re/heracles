@@ -208,7 +208,7 @@ setup_vault() {
         return
     }
 
-    if kubectl exec vault-0 -n vault -- vault status 2>/dev/null | grep -q "Initialized.*true"; then
+    if kubectl exec vault-0 -n vault -- vault status -format=json 2>/dev/null | jq -e -r '.initialized' | grep -q '^true$'; then
         log_info "Vaultは既に初期化済みのため処理をスキップ"
         return
     fi
